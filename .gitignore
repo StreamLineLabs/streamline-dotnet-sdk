@@ -1,0 +1,30 @@
+# Build output
+bin/
+obj/
+packages/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vs/
+.idea/
+.vscode/
+*.user
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+
+# Test coverage
+coverage/
+TestResults/
+
+# NuGet packages
+*.nupkg
+
+# Misc
+*.log
