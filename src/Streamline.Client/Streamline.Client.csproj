@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Package metadata -->
+    <PackageId>Streamline.Client</PackageId>
+    <Version>0.2.0</Version>
+    <Authors>Streamline Team</Authors>
+    <Company>Streamline</Company>
+    <Description>Native .NET client for Streamline streaming platform</Description>
+    <PackageTags>streaming;kafka;messaging;async</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/streamline-dev/streamline</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/streamline-dev/streamline</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Build settings -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Streamline.Client.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <!-- System.Diagnostics.DiagnosticSource is included in .NET 8+ runtime -->
+  </ItemGroup>
+
+</Project>
