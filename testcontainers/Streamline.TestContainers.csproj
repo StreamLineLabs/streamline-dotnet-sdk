@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Package metadata -->
+    <PackageId>Streamline.TestContainers</PackageId>
+    <Version>0.2.0</Version>
+    <Authors>Streamline Team</Authors>
+    <Company>Streamline</Company>
+    <Description>Testcontainers module for Streamline - The Redis of Streaming. Provides a lightweight, Kafka-compatible container for integration testing.</Description>
+    <PackageTags>streamline;kafka;testcontainers;testing;docker;integration-testing;streaming</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- Build settings -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Testcontainers" Version="3.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\Streamline.Client\Streamline.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
