@@ -1,0 +1,81 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore
+      - run: dotnet build --no-restore
+      - run: dotnet test --no-build --verbosity normal --collect:"XPlat Code Coverage"
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore
+      - run: dotnet list package --vulnerable --include-transitive
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore
+      - run: dotnet build --no-restore
+      - name: Start Streamline server
+        run: docker compose -f docker-compose.test.yml up -d
+      - name: Wait for Streamline to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9094/health; then
+              echo " Streamline is healthy"
+              exit 0
+            fi
+            echo "Waiting for Streamline... ($i/30)"
+            sleep 2
+          done
+          echo "Streamline failed to start"
+          docker compose -f docker-compose.test.yml logs
+          exit 1
+      - name: Run integration tests
+        run: dotnet test --no-build --verbosity normal --filter Category=Integration
+        env:
+          STREAMLINE_BOOTSTRAP_SERVERS: localhost:9092
+      - name: Tear down Streamline
+        if: always()
+        run: docker compose -f docker-compose.test.yml down
+
+  docs:
+    name: Generate API docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build with XML documentation
+        run: dotnet build -c Release /p:GenerateDocumentationFile=true
