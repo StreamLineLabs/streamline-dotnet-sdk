@@ -1,6 +1,7 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+- fix: handle null partition assignment gracefully (2026-02-22)
 - test: add integration tests for async enumerable consumption (2026-02-22)
 - refactor: simplify consumer group rebalance logic (2026-02-22)
 
