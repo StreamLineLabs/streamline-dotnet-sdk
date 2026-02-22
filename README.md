@@ -1,6 +1,7 @@
 # Streamline .NET SDK
 
 [![CI](https://github.com/streamlinelabs/streamline-dotnet-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/streamlinelabs/streamline-dotnet-sdk/actions/workflows/ci.yml)
+[![codecov](https://img.shields.io/codecov/c/github/streamlinelabs/streamline-dotnet-sdk?style=flat-square)](https://codecov.io/gh/streamlinelabs/streamline-dotnet-sdk)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-8%2B-purple.svg)](https://dotnet.microsoft.com/)
 [![Docs](https://img.shields.io/badge/docs-streamlinelabs.dev-blue.svg)](https://streamlinelabs.dev/docs/sdks/dotnet)

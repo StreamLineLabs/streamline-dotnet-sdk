@@ -1,14 +1,17 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-- fix: handle null partition assignment gracefully (2026-02-22)
-- test: add integration tests for async enumerable consumption (2026-02-22)
-- refactor: simplify consumer group rebalance logic (2026-02-22)
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+- Handle null partition assignment gracefully
+
+### Changed
+- Simplify consumer group rebalance logic
 
 ## [0.2.0] - 2026-02-18
 
