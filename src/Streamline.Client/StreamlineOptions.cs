@@ -8,7 +8,8 @@ public class StreamlineOptions
     /// <summary>
     /// Bootstrap servers (comma-separated list of host:port).
     /// </summary>
-    public string BootstrapServers { get; set; } = "localhost:9092";
+    public string BootstrapServers { get; set; } =
+        Environment.GetEnvironmentVariable("STREAMLINE_BOOTSTRAP_SERVERS") ?? "localhost:9092";
 
     /// <summary>
     /// Connection pool size.
