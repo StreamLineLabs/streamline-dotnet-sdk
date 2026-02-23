@@ -1,3 +1,5 @@
+using System.Text;
+using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 
 namespace Streamline.Client;
@@ -33,13 +35,14 @@ public interface IProducer<TKey, TValue> : IAsyncDisposable
 }
 
 /// <summary>
-/// Asynchronous producer for Streamline.
+/// Asynchronous producer for Streamline, backed by Confluent.Kafka for wire protocol compatibility.
 /// </summary>
 internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
 {
     private readonly StreamlineOptions _clientOptions;
     private readonly ProducerOptions _options;
     private readonly ILogger _logger;
+    private readonly IProducer<byte[], byte[]> _kafkaProducer;
     private bool _disposed;
 
     public Producer(StreamlineOptions clientOptions, ProducerOptions options, ILogger logger)
@@ -47,6 +50,17 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
         _clientOptions = clientOptions;
         _options = options;
         _logger = logger;
+
+        var config = new ProducerConfig
+        {
+            BootstrapServers = clientOptions.BootstrapServers,
+            Acks = Acks.All,
+            MessageSendMaxRetries = 3,
+            BatchSize = options.BatchSize,
+            LingerMs = options.LingerMs,
+        };
+
+        _kafkaProducer = new ProducerBuilder<byte[], byte[]>(config).Build();
     }
 
     public async Task<RecordMetadata> SendAsync(
@@ -69,27 +83,54 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
 
         _logger.LogDebug("Sending message to topic {Topic}", topic);
 
-        // TODO: Implement actual Kafka protocol message sending
-        await Task.Delay(1, cancellationToken);
+        var keyBytes = key != null ? SerializeToBytes(key) : null;
+        var valueBytes = SerializeToBytes(value);
+
+        var message = new Message<byte[], byte[]>
+        {
+            Key = keyBytes,
+            Value = valueBytes,
+        };
+
+        if (headers is not null && !headers.IsEmpty)
+        {
+            message.Headers = new Confluent.Kafka.Headers();
+            foreach (var header in headers)
+            {
+                message.Headers.Add(header.Key, header.Value);
+            }
+        }
+
+        var result = await _kafkaProducer.ProduceAsync(topic, message, cancellationToken);
 
         return new RecordMetadata(
-            Topic: topic,
-            Partition: 0,
-            Offset: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            Timestamp: DateTimeOffset.UtcNow);
+            Topic: result.Topic,
+            Partition: result.Partition.Value,
+            Offset: result.Offset.Value,
+            Timestamp: result.Timestamp.UtcDateTime);
     }
 
-    public async Task FlushAsync(CancellationToken cancellationToken = default)
+    public Task FlushAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _logger.LogDebug("Flushing producer");
-        await Task.CompletedTask;
+        _kafkaProducer.Flush(cancellationToken);
+        _logger.LogDebug("Producer flushed");
+        return Task.CompletedTask;
+    }
+
+    private static byte[]? SerializeToBytes<T>(T? obj)
+    {
+        if (obj is null) return null;
+        if (obj is byte[] bytes) return bytes;
+        if (obj is string s) return Encoding.UTF8.GetBytes(s);
+        return Encoding.UTF8.GetBytes(obj.ToString() ?? string.Empty);
     }
 
     public ValueTask DisposeAsync()
     {
         if (!_disposed)
         {
+            _kafkaProducer.Dispose();
             _disposed = true;
             _logger.LogDebug("Producer disposed");
         }

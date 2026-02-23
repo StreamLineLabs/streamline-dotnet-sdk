@@ -301,4 +301,95 @@ public sealed class StreamlineContainer : DockerContainer, IAsyncDisposable
         configureOptions(options);
         return new Client.StreamlineClient(options);
     }
+
+    // -------------------------------------------------------------------------
+    // Enhanced capabilities: batch produce, consumer groups, migration helpers
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Produces a batch of messages to a topic.
+    /// </summary>
+    /// <param name="topic">The topic name.</param>
+    /// <param name="messages">The messages to produce.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    public async Task ProduceMessagesAsync(string topic, IEnumerable<string> messages, CancellationToken cancellationToken = default)
+    {
+        foreach (var message in messages)
+        {
+            await ProduceMessageAsync(topic, message, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Produces a batch of keyed messages to a topic.
+    /// </summary>
+    /// <param name="topic">The topic name.</param>
+    /// <param name="messages">Dictionary of key to value.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    public async Task ProduceKeyedMessagesAsync(string topic, IDictionary<string, string> messages, CancellationToken cancellationToken = default)
+    {
+        foreach (var (key, value) in messages)
+        {
+            await ProduceMessageAsync(topic, value, key, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a consumer group exists.
+    /// </summary>
+    /// <param name="groupId">The consumer group ID.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the group does not exist.</exception>
+    public async Task AssertConsumerGroupExistsAsync(string groupId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+
+        var result = await ExecAsync(
+            new[] { "streamline-cli", "groups", "describe", groupId },
+            cancellationToken
+        ).ConfigureAwait(false);
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Consumer group '{groupId}' does not exist");
+        }
+    }
+
+    /// <summary>
+    /// Gets cluster information from the HTTP API.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The cluster info as a JSON string.</returns>
+    public async Task<string> GetClusterInfoAsync(CancellationToken cancellationToken = default)
+    {
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var response = await httpClient.GetAsync(GetInfoUrl(), cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Creates a StreamlineBuilder pre-configured as a drop-in Kafka replacement.
+    /// Useful for migrating from Kafka-based tests.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// // Before (Kafka):
+    /// // await using var kafka = new KafkaBuilder().Build();
+    ///
+    /// // After (Streamline):
+    /// await using var container = StreamlineContainer.AsKafkaReplacement();
+    /// await container.StartAsync();
+    /// var servers = container.GetBootstrapServers();
+    /// </code>
+    /// </example>
+    /// <returns>A StreamlineContainer configured for Kafka compatibility.</returns>
+    public static StreamlineContainer AsKafkaReplacement()
+    {
+        return new StreamlineBuilder()
+            .WithInMemory()
+            .WithStreamlineEnv("STREAMLINE_AUTO_CREATE_TOPICS", "true")
+            .WithStreamlineEnv("STREAMLINE_DEFAULT_PARTITIONS", "1")
+            .Build();
+    }
 }

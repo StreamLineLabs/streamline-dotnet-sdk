@@ -1,5 +1,7 @@
-using Microsoft.Extensions.Logging;
+using System.Text;
 using System.Runtime.CompilerServices;
+using Confluent.Kafka;
+using Microsoft.Extensions.Logging;
 
 namespace Streamline.Client;
 
@@ -48,7 +50,7 @@ public interface IConsumer<TKey, TValue> : IAsyncDisposable
 }
 
 /// <summary>
-/// Asynchronous consumer for Streamline.
+/// Asynchronous consumer for Streamline, backed by Confluent.Kafka.
 /// </summary>
 internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
 {
@@ -56,6 +58,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     private readonly string _topic;
     private readonly ConsumerOptions _options;
     private readonly ILogger _logger;
+    private readonly IConsumer<byte[], byte[]> _kafkaConsumer;
     private bool _subscribed;
     private bool _disposed;
 
@@ -69,19 +72,32 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         _topic = topic;
         _options = options;
         _logger = logger;
+
+        var config = new Confluent.Kafka.ConsumerConfig
+        {
+            BootstrapServers = clientOptions.BootstrapServers,
+            GroupId = options.GroupId ?? $"streamline-dotnet-{Guid.NewGuid():N}",
+            AutoOffsetReset = options.AutoOffsetReset == Client.AutoOffsetReset.Earliest
+                ? Confluent.Kafka.AutoOffsetReset.Earliest
+                : Confluent.Kafka.AutoOffsetReset.Latest,
+            EnableAutoCommit = options.EnableAutoCommit,
+        };
+
+        _kafkaConsumer = new ConsumerBuilder<byte[], byte[]>(config).Build();
     }
 
-    public async Task SubscribeAsync(CancellationToken cancellationToken = default)
+    public Task SubscribeAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!_subscribed)
         {
             _logger.LogInformation("Subscribing to topic {Topic}", _topic);
-            // TODO: Implement subscription
+            _kafkaConsumer.Subscribe(_topic);
             _subscribed = true;
-            await Task.CompletedTask;
         }
+
+        return Task.CompletedTask;
     }
 
     public async IAsyncEnumerable<ConsumerRecord<TKey, TValue>> ConsumeAsync(
@@ -104,7 +120,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         }
     }
 
-    public async Task<IReadOnlyList<ConsumerRecord<TKey, TValue>>> PollAsync(
+    public Task<IReadOnlyList<ConsumerRecord<TKey, TValue>>> PollAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
@@ -115,45 +131,98 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
             throw new InvalidOperationException("Consumer is not subscribed");
         }
 
-        _logger.LogTrace("Polling for records with timeout {Timeout}", timeout);
+        var results = new List<ConsumerRecord<TKey, TValue>>();
+        var deadline = DateTime.UtcNow.Add(timeout);
 
-        // TODO: Implement actual Kafka protocol fetch
-        await Task.Delay(timeout, cancellationToken);
-        return Array.Empty<ConsumerRecord<TKey, TValue>>();
+        while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var result = _kafkaConsumer.Consume(TimeSpan.FromMilliseconds(50));
+                if (result?.Message == null) continue;
+
+                var key = result.Message.Key != null
+                    ? (TKey)(object)Encoding.UTF8.GetString(result.Message.Key)
+                    : default;
+                var value = result.Message.Value != null
+                    ? (TValue)(object)Encoding.UTF8.GetString(result.Message.Value)
+                    : default!;
+
+                var headers = new Client.Headers();
+                if (result.Message.Headers != null)
+                {
+                    foreach (var header in result.Message.Headers)
+                    {
+                        headers.Add(header.Key, header.GetValueBytes());
+                    }
+                }
+
+                results.Add(new ConsumerRecord<TKey, TValue>(
+                    result.Topic,
+                    result.Partition.Value,
+                    result.Offset.Value,
+                    result.Message.Timestamp.UtcDateTime,
+                    key,
+                    value,
+                    headers));
+            }
+            catch (ConsumeException ex)
+            {
+                _logger.LogWarning("Consume error: {Error}", ex.Error.Reason);
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<ConsumerRecord<TKey, TValue>>>(results);
     }
 
-    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    public Task CommitAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _logger.LogDebug("Committing offsets");
-        await Task.CompletedTask;
+        _kafkaConsumer.Commit();
+        _logger.LogDebug("Offsets committed");
+        return Task.CompletedTask;
     }
 
-    public async Task SeekToBeginningAsync(CancellationToken cancellationToken = default)
+    public Task SeekToBeginningAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        var assignment = _kafkaConsumer.Assignment;
+        var offsets = assignment.Select(tp => new TopicPartitionOffset(tp, Confluent.Kafka.Offset.Beginning)).ToList();
+        foreach (var tpo in offsets)
+        {
+            _kafkaConsumer.Seek(tpo);
+        }
         _logger.LogDebug("Seeking to beginning");
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
-    public async Task SeekToEndAsync(CancellationToken cancellationToken = default)
+    public Task SeekToEndAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        var assignment = _kafkaConsumer.Assignment;
+        var offsets = assignment.Select(tp => new TopicPartitionOffset(tp, Confluent.Kafka.Offset.End)).ToList();
+        foreach (var tpo in offsets)
+        {
+            _kafkaConsumer.Seek(tpo);
+        }
         _logger.LogDebug("Seeking to end");
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
-    public async Task SeekAsync(int partition, long offset, CancellationToken cancellationToken = default)
+    public Task SeekAsync(int partition, long offset, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _kafkaConsumer.Seek(new TopicPartitionOffset(_topic, partition, offset));
         _logger.LogDebug("Seeking partition {Partition} to offset {Offset}", partition, offset);
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     public ValueTask DisposeAsync()
     {
         if (!_disposed)
         {
+            _kafkaConsumer.Close();
+            _kafkaConsumer.Dispose();
             _disposed = true;
             _logger.LogInformation("Consumer disposed");
         }

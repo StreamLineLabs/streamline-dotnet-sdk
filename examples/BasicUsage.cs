@@ -9,7 +9,7 @@
 using Streamline.Client;
 
 // Create a client
-await using var client = new StreamlineClient("localhost:9092");
+await using var client = new StreamlineClient(Environment.GetEnvironmentVariable("STREAMLINE_BOOTSTRAP_SERVERS") ?? "localhost:9092");
 
 // --- Produce Messages ---
 Console.WriteLine("=== Producing Messages ===");
