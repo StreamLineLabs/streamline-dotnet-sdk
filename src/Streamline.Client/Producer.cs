@@ -150,3 +150,5 @@ public record RecordMetadata(
     int Partition,
     long Offset,
     DateTimeOffset Timestamp);
+
+// add batch producer API for bulk publishing
