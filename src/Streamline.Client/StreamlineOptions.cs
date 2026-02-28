@@ -35,6 +35,21 @@ public class StreamlineOptions
     /// Consumer configuration.
     /// </summary>
     public ConsumerOptions Consumer { get; set; } = new();
+
+    /// <summary>
+    /// Security protocol for connections.
+    /// </summary>
+    public SecurityProtocol SecurityProtocol { get; set; } = SecurityProtocol.Plaintext;
+
+    /// <summary>
+    /// TLS/SSL configuration (used when SecurityProtocol is Ssl or SaslSsl).
+    /// </summary>
+    public TlsOptions? Tls { get; set; }
+
+    /// <summary>
+    /// SASL authentication configuration (used when SecurityProtocol is SaslPlaintext or SaslSsl).
+    /// </summary>
+    public SaslOptions? Sasl { get; set; }
 }
 
 /// <summary>
@@ -147,4 +162,79 @@ public enum AutoOffsetReset
     Latest,
     /// <summary>Throw an error if no offset is found.</summary>
     None
+}
+
+/// <summary>
+/// Security protocol for connections.
+/// </summary>
+public enum SecurityProtocol
+{
+    /// <summary>No encryption or authentication.</summary>
+    Plaintext,
+    /// <summary>TLS encryption only.</summary>
+    Ssl,
+    /// <summary>SASL authentication without encryption.</summary>
+    SaslPlaintext,
+    /// <summary>SASL authentication with TLS encryption.</summary>
+    SaslSsl
+}
+
+/// <summary>
+/// SASL authentication mechanism.
+/// </summary>
+public enum SaslMechanism
+{
+    /// <summary>PLAIN mechanism (username/password in cleartext).</summary>
+    Plain,
+    /// <summary>SCRAM-SHA-256 mechanism.</summary>
+    ScramSha256,
+    /// <summary>SCRAM-SHA-512 mechanism.</summary>
+    ScramSha512
+}
+
+/// <summary>
+/// TLS/SSL configuration options.
+/// </summary>
+public class TlsOptions
+{
+    /// <summary>
+    /// Path to the CA certificate file (PEM format).
+    /// </summary>
+    public string? CaCertificatePath { get; set; }
+
+    /// <summary>
+    /// Path to the client certificate file (PEM format) for mutual TLS.
+    /// </summary>
+    public string? ClientCertificatePath { get; set; }
+
+    /// <summary>
+    /// Path to the client private key file (PEM format) for mutual TLS.
+    /// </summary>
+    public string? ClientKeyPath { get; set; }
+
+    /// <summary>
+    /// Skip server certificate verification. NOT recommended for production.
+    /// </summary>
+    public bool SkipCertificateVerification { get; set; }
+}
+
+/// <summary>
+/// SASL authentication options.
+/// </summary>
+public class SaslOptions
+{
+    /// <summary>
+    /// SASL mechanism to use.
+    /// </summary>
+    public SaslMechanism Mechanism { get; set; } = SaslMechanism.Plain;
+
+    /// <summary>
+    /// Username for SASL authentication.
+    /// </summary>
+    public string? Username { get; set; }
+
+    /// <summary>
+    /// Password for SASL authentication.
+    /// </summary>
+    public string? Password { get; set; }
 }

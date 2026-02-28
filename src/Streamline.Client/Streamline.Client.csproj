@@ -14,8 +14,8 @@
     <Description>Native .NET client for Streamline streaming platform</Description>
     <PackageTags>streaming;kafka;messaging;async</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/streamline-dev/streamline</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/streamline-dev/streamline</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
     <!-- Build settings -->

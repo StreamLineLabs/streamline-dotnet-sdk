@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageId>Streamline.Embedded</PackageId>
+    <Version>0.2.0</Version>
+    <Description>Embedded Streamline streaming server for .NET</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Streamline.Client/Streamline.Client.csproj" />
+  </ItemGroup>
+</Project>
