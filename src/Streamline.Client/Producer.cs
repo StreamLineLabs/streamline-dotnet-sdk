@@ -42,7 +42,7 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
     private readonly StreamlineOptions _clientOptions;
     private readonly ProducerOptions _options;
     private readonly ILogger _logger;
-    private readonly IProducer<byte[], byte[]> _kafkaProducer;
+    private readonly Confluent.Kafka.IProducer<byte[], byte[]> _kafkaProducer;
     private bool _disposed;
 
     public Producer(StreamlineOptions clientOptions, ProducerOptions options, ILogger logger)
@@ -88,8 +88,8 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
 
         var message = new Message<byte[], byte[]>
         {
-            Key = keyBytes,
-            Value = valueBytes,
+            Key = keyBytes!,
+            Value = valueBytes!,
         };
 
         if (headers is not null && !headers.IsEmpty)

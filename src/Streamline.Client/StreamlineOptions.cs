@@ -75,7 +75,7 @@ public class ProducerOptions
     /// <summary>
     /// Enable idempotent producer.
     /// </summary>
-    public bool Idempotent { get; set; } = false;
+    public bool Idempotent { get; set; }
 }
 
 /// <summary>

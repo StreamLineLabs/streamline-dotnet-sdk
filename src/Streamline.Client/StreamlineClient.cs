@@ -174,5 +174,6 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
             await _connectionManager.DisposeAsync();
             _logger.LogInformation("Streamline client disposed");
         }
+        GC.SuppressFinalize(this);
     }
 }

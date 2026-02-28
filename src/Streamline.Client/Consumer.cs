@@ -58,7 +58,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     private readonly string _topic;
     private readonly ConsumerOptions _options;
     private readonly ILogger _logger;
-    private readonly IConsumer<byte[], byte[]> _kafkaConsumer;
+    private readonly Confluent.Kafka.IConsumer<byte[], byte[]> _kafkaConsumer;
     private bool _subscribed;
     private bool _disposed;
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 namespace Streamline.Client.Telemetry;
 
@@ -146,8 +147,8 @@ public static class StreamlineActivitySource
             activity.SetTag("messaging.system", "streamline");
             activity.SetTag("messaging.destination.name", topic);
             activity.SetTag("messaging.operation", "process");
-            activity.SetTag("messaging.destination.partition.id", partition.ToString());
-            activity.SetTag("messaging.message.id", offset.ToString());
+            activity.SetTag("messaging.destination.partition.id", partition.ToString(CultureInfo.InvariantCulture));
+            activity.SetTag("messaging.message.id", offset.ToString(CultureInfo.InvariantCulture));
         }
 
         return activity;
