@@ -60,3 +60,4 @@ public class Headers : IEnumerable<KeyValuePair<string, byte[]>>
     /// <inheritdoc />
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
+
