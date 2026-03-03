@@ -51,3 +51,4 @@ public sealed class StreamlineConfiguration : ContainerConfiguration
     {
     }
 }
+
