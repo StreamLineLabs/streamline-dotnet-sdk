@@ -49,3 +49,4 @@ public interface IStreamlineClient : IAsyncDisposable
     /// </summary>
     Task<bool> IsHealthyAsync(CancellationToken cancellationToken = default);
 }
+
