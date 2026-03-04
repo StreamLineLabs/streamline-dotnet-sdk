@@ -113,8 +113,9 @@ public class StreamlineTopicNotFoundException : StreamlineException
 
     /// <summary>Initializes a new instance for the specified topic.</summary>
     /// <param name="topic">The topic that was not found.</param>
-    public StreamlineTopicNotFoundException(string topic)
-        : base($"Topic not found: {topic}", StreamlineErrorCode.TopicNotFound, isRetryable: false,
+    /// <param name="message">Optional custom message.</param>
+    public StreamlineTopicNotFoundException(string topic, string? message = null)
+        : base(message ?? $"Topic not found: {topic}", StreamlineErrorCode.TopicNotFound, isRetryable: false,
                hint: $"Create the topic with: streamline-cli topics create {topic}")
     {
         Topic = topic;

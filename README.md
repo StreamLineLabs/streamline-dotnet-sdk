@@ -77,10 +77,15 @@ public class EventService
 
 - Async/await support throughout
 - `IAsyncEnumerable` for consuming messages
-- Dependency injection integration
+- Admin client (topic management, consumer groups, SQL queries via HTTP REST API)
+- SQL query support via `QueryClient`
+- Dependency injection integration (`AddStreamline()`, `AddStreamlineAdmin()`)
 - Connection pooling
 - Automatic reconnection
 - Compression support (LZ4, Zstd, Snappy, Gzip)
+- TLS/mTLS support with configurable certificates
+- SASL authentication (PLAIN, SCRAM-SHA-256/512)
+- Schema Registry integration
 - [Testcontainers integration](./testcontainers/README.md) for seamless integration testing
 - OpenTelemetry-compatible distributed tracing via `System.Diagnostics.ActivitySource`
 
@@ -285,6 +290,34 @@ dotnet test
 | `await consumer.SeekToBeginningAsync()` | Seek to start |
 | `await consumer.SeekToEndAsync()` | Seek to end |
 | `await consumer.SeekAsync(partition, offset)` | Seek to specific offset |
+
+## Error Handling
+
+```csharp
+using Streamline;
+
+try
+{
+    await client.ProduceAsync("my-topic", "key", "value");
+}
+catch (TopicNotFoundException ex)
+{
+    Console.WriteLine($"Topic not found: {ex.Message}");
+    Console.WriteLine($"Hint: {ex.Hint}");
+}
+catch (StreamlineException ex) when (ex.Retryable)
+{
+    Console.WriteLine($"Retryable error: {ex.Message}");
+}
+catch (StreamlineException ex)
+{
+    Console.WriteLine($"Fatal error: {ex.Message}");
+}
+```
+
+## Contributing
+
+Contributions are welcome! Please see the [organization contributing guide](https://github.com/streamlinelabs/.github/blob/main/CONTRIBUTING.md) for guidelines.
 
 ## License
 
