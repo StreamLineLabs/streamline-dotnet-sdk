@@ -309,3 +309,4 @@ public class RetryPolicyTests
         Assert.Equal(1, attempts);
     }
 }
+
