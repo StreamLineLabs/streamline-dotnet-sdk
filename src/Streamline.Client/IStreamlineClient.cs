@@ -48,5 +48,12 @@ public interface IStreamlineClient : IAsyncDisposable
     /// Checks if the client is connected and healthy.
     /// </summary>
     Task<bool> IsHealthyAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates an admin client for topic, consumer group, and server management
+    /// via the HTTP REST API.
+    /// </summary>
+    /// <param name="httpBaseUrl">Base URL of the HTTP API (default: http://localhost:9094).</param>
+    IAdminClient CreateAdmin(string httpBaseUrl = "http://localhost:9094");
 }
 

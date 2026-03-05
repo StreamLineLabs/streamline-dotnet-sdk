@@ -46,4 +46,52 @@ public static class ServiceCollectionExtensions
             options.BootstrapServers = bootstrapServers;
         });
     }
+
+    /// <summary>
+    /// Adds the Streamline admin client to the service collection.
+    /// Uses the <see cref="AdminOptions"/> from the configured <see cref="StreamlineOptions"/>.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddStreamlineAdmin(
+        this IServiceCollection services)
+    {
+        services.AddSingleton<IAdminClient>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<StreamlineOptions>>().Value;
+            var httpClient = new HttpClient
+            {
+                BaseAddress = new Uri(options.Admin.HttpBaseUrl),
+                Timeout = options.Admin.Timeout,
+            };
+            if (options.Admin.AuthToken is not null)
+            {
+                httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.Admin.AuthToken);
+            }
+            return new AdminClient(httpClient);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the Streamline admin client with explicit configuration.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="httpBaseUrl">Base URL of the HTTP API (e.g., "http://localhost:9094").</param>
+    /// <param name="authToken">Optional bearer token.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddStreamlineAdmin(
+        this IServiceCollection services,
+        string httpBaseUrl,
+        string? authToken = null)
+    {
+        services.AddSingleton<IAdminClient>(sp =>
+        {
+            return new AdminClient(httpBaseUrl, authToken);
+        });
+
+        return services;
+    }
 }
