@@ -50,6 +50,33 @@ public class StreamlineOptions
     /// SASL authentication configuration (used when SecurityProtocol is SaslPlaintext or SaslSsl).
     /// </summary>
     public SaslOptions? Sasl { get; set; }
+
+    /// <summary>
+    /// Admin client configuration for HTTP REST API operations.
+    /// </summary>
+    public AdminOptions Admin { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration options for the admin client HTTP API.
+/// </summary>
+public class AdminOptions
+{
+    /// <summary>
+    /// Base URL for the Streamline HTTP API (default: http://localhost:9094).
+    /// </summary>
+    public string HttpBaseUrl { get; set; } =
+        Environment.GetEnvironmentVariable("STREAMLINE_HTTP_URL") ?? "http://localhost:9094";
+
+    /// <summary>
+    /// Optional bearer token for authentication.
+    /// </summary>
+    public string? AuthToken { get; set; }
+
+    /// <summary>
+    /// HTTP request timeout.
+    /// </summary>
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>

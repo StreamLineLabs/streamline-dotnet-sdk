@@ -165,6 +165,15 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
         return await _connectionManager.CheckHealthAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Creates an admin client for topic, consumer group, and server management.
+    /// </summary>
+    /// <param name="httpBaseUrl">Base URL of the HTTP API (default: http://localhost:9094).</param>
+    public IAdminClient CreateAdmin(string httpBaseUrl = "http://localhost:9094")
+    {
+        return new AdminClient(httpBaseUrl);
+    }
+
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
