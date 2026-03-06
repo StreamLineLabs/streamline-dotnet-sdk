@@ -1,16 +1,15 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-- feat: add batch producer API for bulk publishing
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-- refactor: simplify connection retry logic (2026-03-06)
 ## [Unreleased]
 
-## [0.2.0] - 2026-02-28
+- feat: add batch producer API for bulk publishing
+- refactor: simplify connection retry logic (2026-03-06)
 - **Changed**: simplify producer configuration builder
 - **Testing**: add benchmark suite for throughput measurement
 - **Fixed**: resolve connection timeout on reconnect
@@ -27,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Simplify consumer group rebalance logic
+
 
 ## [0.2.0] - 2026-02-18
 

@@ -315,6 +315,46 @@ catch (StreamlineException ex)
 }
 ```
 
+## Configuration Reference
+
+### Client (`StreamlineOptions`)
+
+| Property | Default | Description |
+|---|---|---|
+| `BootstrapServers` | `"localhost:9092"` | Comma-separated broker addresses |
+| `ConnectionPoolSize` | `4` | Number of connections per broker |
+| `ConnectTimeout` | `10s` | Connection timeout (`TimeSpan`) |
+| `RequestTimeout` | `30s` | Request timeout (`TimeSpan`) |
+
+### Producer (`StreamlineProducerOptions`)
+
+| Property | Default | Description |
+|---|---|---|
+| `BatchSize` | `16384` | Maximum batch size in bytes |
+| `LingerMs` | `0` | Batch linger time in milliseconds |
+| `CompressionType` | `None` | Compression: `None`, `Gzip`, `Snappy`, `Lz4`, `Zstd` |
+| `Retries` | `3` | Retries on transient failures |
+| `Acks` | `Leader` | Acknowledgment: `None`, `Leader`, `All` |
+| `EnableIdempotence` | `false` | Enable exactly-once semantics |
+
+### Consumer (`StreamlineConsumerOptions`)
+
+| Property | Default | Description |
+|---|---|---|
+| `GroupId` | *(required)* | Consumer group identifier |
+| `AutoOffsetReset` | `Latest` | Start position: `Earliest`, `Latest` |
+| `EnableAutoCommit` | `true` | Automatically commit offsets |
+| `MaxPollRecords` | `500` | Maximum records per poll |
+| `SessionTimeoutMs` | `30000` | Session timeout in milliseconds |
+
+### Security
+
+| Property | Default | Description |
+|---|---|---|
+| `SecurityProtocol` | `Plaintext` | Protocol: `Plaintext`, `Ssl`, `SaslPlaintext`, `SaslSsl` |
+| `SaslMechanism` | — | SASL mechanism: `Plain`, `ScramSha256`, `ScramSha512` |
+| `SslCaLocation` | — | Path to CA certificate |
+
 ## Contributing
 
 Contributions are welcome! Please see the [organization contributing guide](https://github.com/streamlinelabs/.github/blob/main/CONTRIBUTING.md) for guidelines.
