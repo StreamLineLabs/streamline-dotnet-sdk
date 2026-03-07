@@ -12,7 +12,7 @@ namespace Streamline.Client;
 /// await client.ProduceAsync("my-topic", "key", "value");
 /// </code>
 /// </example>
-public class StreamlineClient : IStreamlineClient, IAsyncDisposable
+public class StreamlineClient : IStreamlineClient, IAsyncDisposable, IDisposable
 {
     private readonly StreamlineOptions _options;
     private readonly ILogger<StreamlineClient> _logger;
@@ -175,6 +175,18 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
         {
             _disposed = true;
             await _connectionManager.DisposeAsync();
+            _logger.LogInformation("Streamline client disposed");
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _disposed = true;
+            _connectionManager.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _logger.LogInformation("Streamline client disposed");
         }
         GC.SuppressFinalize(this);
