@@ -355,6 +355,31 @@ catch (StreamlineException ex)
 | `SaslMechanism` | — | SASL mechanism: `Plain`, `ScramSha256`, `ScramSha512` |
 | `SslCaLocation` | — | Path to CA certificate |
 
+## Circuit Breaker
+
+Protect your application from cascading failures when the Streamline server is unresponsive:
+
+```csharp
+using Streamline.Client;
+
+var breaker = new CircuitBreaker(new CircuitBreakerOptions
+{
+    FailureThreshold = 5,      // Open after 5 consecutive failures
+    SuccessThreshold = 2,      // Close after 2 half-open successes
+    OpenTimeout = TimeSpan.FromSeconds(30),
+});
+
+breaker.OnStateChange += (from, to) =>
+    logger.LogInformation("Circuit: {From} → {To}", from, to);
+
+// Wrap async producer calls
+var metadata = await breaker.ExecuteAsync(async () =>
+    await producer.SendAsync("events", "user-1", eventPayload)
+);
+```
+
+When the circuit is open, `ExecuteAsync` throws a retryable `StreamlineException`. See the [Circuit Breaker guide](https://streamlinelabs.dev/docs/features/circuit-breaker) for details.
+
 ## Contributing
 
 Contributions are welcome! Please see the [organization contributing guide](https://github.com/streamlinelabs/.github/blob/main/CONTRIBUTING.md) for guidelines.

@@ -229,7 +229,7 @@ public sealed class AdminClient : IAdminClient
     {
         var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{Uri.EscapeDataString(groupId)}", cancellationToken);
         return await DeserializeAsync<ConsumerGroupMetadata>(response, cancellationToken)
-            ?? throw new StreamlineException("Consumer group not found", StreamlineErrorCode.TopicNotFound);
+            ?? throw new StreamlineException("Consumer group not found", StreamlineErrorCode.Unknown, hint: "Check that the consumer group ID is correct");
     }
 
     /// <inheritdoc />

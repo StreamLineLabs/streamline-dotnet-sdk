@@ -8,17 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- feat: add batch producer API for bulk publishing
+### Added
+- Circuit breaker pattern (`CircuitBreaker.cs`) with async `ExecuteAsync<T>`, ILogger integration, and state change events
+- Circuit breaker test suite (14 tests covering state transitions, ExecuteAsync, exception classification)
+- `SendBatchAsync` on `IProducer<TKey, TValue>` for bulk message publishing with Task.WhenAll
+- Circuit breaker usage example (`CircuitBreakerUsage/Program.cs`)
+- TLS/SASL authentication example (`SecurityUsage/Program.cs`)
+
+### Fixed
+- `StreamlineClient.ProduceAsync` now delegates to real Confluent.Kafka producer (was returning fake metadata)
+- Producer and Consumer now wire TLS/SASL options from `StreamlineOptions` to Confluent.Kafka config
+- Producer now wires `CompressionType` to Confluent.Kafka config (was ignored)
+- Producer now wires `Retries`, `RetryBackoffMs`, and `EnableIdempotence` from `ProducerOptions`
+- Consumer now wires `AutoCommitIntervalMs`, `SessionTimeoutMs`, `HeartbeatIntervalMs`
+- `AdminClient.DescribeConsumerGroupAsync` uses correct error code (was `TopicNotFound`)
+
+### Changed
 - refactor: simplify connection retry logic (2026-03-06)
-- **Changed**: simplify producer configuration builder
-- **Testing**: add benchmark suite for throughput measurement
-- **Fixed**: resolve connection timeout on reconnect
-- **Added**: add IAsyncEnumerable consumer extensions
-- **Fixed**: handle deserialization errors gracefully
 - **Changed**: update Confluent.Kafka dependency
-- **Changed**: simplify producer configuration builder
-- **Testing**: add benchmark suite for throughput measurement
-- **Fixed**: resolve connection timeout on reconnect
 - **Added**: add IAsyncEnumerable consumer extensions
 
 ### Fixed
