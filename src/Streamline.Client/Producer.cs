@@ -32,6 +32,18 @@ public interface IProducer<TKey, TValue> : IAsyncDisposable
     /// Flushes any buffered messages.
     /// </summary>
     Task FlushAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a batch of messages to a topic.
+    /// </summary>
+    /// <param name="topic">The topic name.</param>
+    /// <param name="messages">Sequence of (key, value) pairs to send.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Metadata for each produced record.</returns>
+    Task<IReadOnlyList<RecordMetadata>> SendBatchAsync(
+        string topic,
+        IEnumerable<(TKey? Key, TValue Value)> messages,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -55,10 +67,33 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
         {
             BootstrapServers = clientOptions.BootstrapServers,
             Acks = Acks.All,
-            MessageSendMaxRetries = 3,
+            MessageSendMaxRetries = options.Retries,
+            RetryBackoffMs = options.RetryBackoffMs,
             BatchSize = options.BatchSize,
             LingerMs = options.LingerMs,
+            CompressionType = MapCompressionType(options.CompressionType),
+            EnableIdempotence = options.Idempotent,
+            SecurityProtocol = MapSecurityProtocol(clientOptions.SecurityProtocol),
         };
+
+        if (clientOptions.Tls is { } tls)
+        {
+            if (tls.CaCertificatePath is not null)
+                config.SslCaLocation = tls.CaCertificatePath;
+            if (tls.ClientCertificatePath is not null)
+                config.SslCertificateLocation = tls.ClientCertificatePath;
+            if (tls.ClientKeyPath is not null)
+                config.SslKeyLocation = tls.ClientKeyPath;
+            if (tls.SkipCertificateVerification)
+                config.EnableSslCertificateVerification = false;
+        }
+
+        if (clientOptions.Sasl is { } sasl)
+        {
+            config.SaslMechanism = MapSaslMechanism(sasl.Mechanism);
+            config.SaslUsername = sasl.Username;
+            config.SaslPassword = sasl.Password;
+        }
 
         _kafkaProducer = new ProducerBuilder<byte[], byte[]>(config).Build();
     }
@@ -110,6 +145,48 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
             Timestamp: result.Timestamp.UtcDateTime);
     }
 
+    public async Task<IReadOnlyList<RecordMetadata>> SendBatchAsync(
+        string topic,
+        IEnumerable<(TKey? Key, TValue Value)> messages,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var results = new List<RecordMetadata>();
+        var tasks = new List<Task<DeliveryResult<byte[], byte[]>>>();
+
+        foreach (var (key, value) in messages)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var keyBytes = key != null ? SerializeToBytes(key) : null;
+            var valueBytes = SerializeToBytes(value);
+
+            var message = new Message<byte[], byte[]>
+            {
+                Key = keyBytes!,
+                Value = valueBytes!,
+            };
+
+            tasks.Add(_kafkaProducer.ProduceAsync(topic, message, cancellationToken));
+        }
+
+        _logger.LogDebug("Sending batch of {Count} messages to topic {Topic}", tasks.Count, topic);
+
+        var deliveryResults = await Task.WhenAll(tasks);
+
+        foreach (var result in deliveryResults)
+        {
+            results.Add(new RecordMetadata(
+                Topic: result.Topic,
+                Partition: result.Partition.Value,
+                Offset: result.Offset.Value,
+                Timestamp: result.Timestamp.UtcDateTime));
+        }
+
+        return results;
+    }
+
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -117,6 +194,30 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
         _logger.LogDebug("Producer flushed");
         return Task.CompletedTask;
     }
+
+    private static Confluent.Kafka.CompressionType MapCompressionType(CompressionType ct) => ct switch
+    {
+        CompressionType.Gzip => Confluent.Kafka.CompressionType.Gzip,
+        CompressionType.Lz4 => Confluent.Kafka.CompressionType.Lz4,
+        CompressionType.Snappy => Confluent.Kafka.CompressionType.Snappy,
+        CompressionType.Zstd => Confluent.Kafka.CompressionType.Zstd,
+        _ => Confluent.Kafka.CompressionType.None,
+    };
+
+    private static Confluent.Kafka.SecurityProtocol MapSecurityProtocol(SecurityProtocol sp) => sp switch
+    {
+        SecurityProtocol.Ssl => Confluent.Kafka.SecurityProtocol.Ssl,
+        SecurityProtocol.SaslPlaintext => Confluent.Kafka.SecurityProtocol.SaslPlaintext,
+        SecurityProtocol.SaslSsl => Confluent.Kafka.SecurityProtocol.SaslSsl,
+        _ => Confluent.Kafka.SecurityProtocol.Plaintext,
+    };
+
+    private static Confluent.Kafka.SaslMechanism MapSaslMechanism(SaslMechanism sm) => sm switch
+    {
+        SaslMechanism.ScramSha256 => Confluent.Kafka.SaslMechanism.ScramSha256,
+        SaslMechanism.ScramSha512 => Confluent.Kafka.SaslMechanism.ScramSha512,
+        _ => Confluent.Kafka.SaslMechanism.Plain,
+    };
 
     private static byte[]? SerializeToBytes<T>(T? obj)
     {
@@ -150,5 +251,3 @@ public record RecordMetadata(
     int Partition,
     long Offset,
     DateTimeOffset Timestamp);
-
-// add batch producer API for bulk publishing

@@ -109,14 +109,8 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
         {
             _logger.LogDebug("Producing message to topic {Topic}", topic);
 
-            // TODO: Implement actual Kafka protocol message sending
-            await Task.Delay(1, cancellationToken);
-
-            return new RecordMetadata(
-                Topic: topic,
-                Partition: 0,
-                Offset: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                Timestamp: DateTimeOffset.UtcNow);
+            await using var producer = CreateProducer<string, string>();
+            return await producer.SendAsync(topic, key, value, headers, cancellationToken);
         }, cancellationToken);
     }
 

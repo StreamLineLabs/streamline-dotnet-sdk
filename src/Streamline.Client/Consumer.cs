@@ -81,7 +81,31 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
                 ? Confluent.Kafka.AutoOffsetReset.Earliest
                 : Confluent.Kafka.AutoOffsetReset.Latest,
             EnableAutoCommit = options.EnableAutoCommit,
+            AutoCommitIntervalMs = (int)options.AutoCommitInterval.TotalMilliseconds,
+            SessionTimeoutMs = (int)options.SessionTimeout.TotalMilliseconds,
+            HeartbeatIntervalMs = (int)options.HeartbeatInterval.TotalMilliseconds,
+            MaxPollIntervalMs = options.MaxPollRecords > 0 ? 300000 : 300000,
+            SecurityProtocol = MapSecurityProtocol(clientOptions.SecurityProtocol),
         };
+
+        if (clientOptions.Tls is { } tls)
+        {
+            if (tls.CaCertificatePath is not null)
+                config.SslCaLocation = tls.CaCertificatePath;
+            if (tls.ClientCertificatePath is not null)
+                config.SslCertificateLocation = tls.ClientCertificatePath;
+            if (tls.ClientKeyPath is not null)
+                config.SslKeyLocation = tls.ClientKeyPath;
+            if (tls.SkipCertificateVerification)
+                config.EnableSslCertificateVerification = false;
+        }
+
+        if (clientOptions.Sasl is { } sasl)
+        {
+            config.SaslMechanism = MapSaslMechanism(sasl.Mechanism);
+            config.SaslUsername = sasl.Username;
+            config.SaslPassword = sasl.Password;
+        }
 
         _kafkaConsumer = new ConsumerBuilder<byte[], byte[]>(config).Build();
     }
@@ -216,6 +240,21 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         _logger.LogDebug("Seeking partition {Partition} to offset {Offset}", partition, offset);
         return Task.CompletedTask;
     }
+
+    private static Confluent.Kafka.SecurityProtocol MapSecurityProtocol(SecurityProtocol sp) => sp switch
+    {
+        SecurityProtocol.Ssl => Confluent.Kafka.SecurityProtocol.Ssl,
+        SecurityProtocol.SaslPlaintext => Confluent.Kafka.SecurityProtocol.SaslPlaintext,
+        SecurityProtocol.SaslSsl => Confluent.Kafka.SecurityProtocol.SaslSsl,
+        _ => Confluent.Kafka.SecurityProtocol.Plaintext,
+    };
+
+    private static Confluent.Kafka.SaslMechanism MapSaslMechanism(SaslMechanism sm) => sm switch
+    {
+        SaslMechanism.ScramSha256 => Confluent.Kafka.SaslMechanism.ScramSha256,
+        SaslMechanism.ScramSha512 => Confluent.Kafka.SaslMechanism.ScramSha512,
+        _ => Confluent.Kafka.SaslMechanism.Plain,
+    };
 
     public ValueTask DisposeAsync()
     {
