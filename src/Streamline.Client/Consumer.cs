@@ -280,3 +280,18 @@ public record ConsumerRecord<TKey, TValue>(
     TKey? Key,
     TValue Value,
     Headers Headers);
+
+
+    /// <summary>
+    /// Validates that the given offset is within valid range.
+    /// </summary>
+    private static void ValidateOffset(long offset)
+    {
+        if (offset < -2)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(offset),
+                offset,
+                "Offset must be >= -2 (earliest=-2, latest=-1, or a specific offset >= 0)");
+        }
+    }
