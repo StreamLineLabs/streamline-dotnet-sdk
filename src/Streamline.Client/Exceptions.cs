@@ -182,3 +182,18 @@ public class StreamlineConfigurationException : StreamlineException
     {
     }
 }
+
+
+    /// <summary>
+    /// Centralized error message constants for consistent messaging.
+    /// </summary>
+    internal static class ErrorMessages
+    {
+        public const string ConnectionFailed = "Failed to connect to Streamline broker";
+        public const string AuthenticationFailed = "Authentication failed. Check credentials and SASL configuration";
+        public const string TopicNotFound = "The specified topic does not exist";
+        public const string ProducerClosed = "Cannot produce: producer has been closed";
+        public const string ConsumerClosed = "Cannot consume: consumer has been closed";
+        public const string InvalidConfiguration = "Invalid client configuration";
+        public const string SerializationFailed = "Failed to serialize/deserialize message";
+    }
