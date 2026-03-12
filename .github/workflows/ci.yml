@@ -56,7 +56,7 @@ jobs:
           exit 1
 
       - name: Run conformance tests
-        run: dotnet test tests/Streamline.Conformance --no-build --verbosity normal
+        run: dotnet test tests/Streamline.Conformance --filter "Category=Conformance" --no-build --verbosity normal
 
       - name: Stop Streamline server
         if: always()

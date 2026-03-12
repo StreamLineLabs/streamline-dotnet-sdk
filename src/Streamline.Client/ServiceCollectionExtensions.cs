@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Streamline.Client.Schema;
 
 namespace Streamline.Client;
 
@@ -93,5 +94,43 @@ public static class ServiceCollectionExtensions
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Adds the Streamline Schema Registry client to the service collection.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Configuration action for <see cref="SchemaRegistryOptions"/>.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddStreamlineSchemaRegistry(
+        this IServiceCollection services,
+        Action<SchemaRegistryOptions> configure)
+    {
+        services.Configure(configure);
+
+        services.AddSingleton<ISchemaRegistryClient>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<SchemaRegistryOptions>>();
+            var logger = sp.GetRequiredService<ILogger<SchemaRegistryClient>>();
+            return new SchemaRegistryClient(options, logger);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the Streamline Schema Registry client with the specified base URL.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="baseUrl">Base URL of the schema registry (e.g., "http://localhost:9094").</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddStreamlineSchemaRegistry(
+        this IServiceCollection services,
+        string baseUrl)
+    {
+        return services.AddStreamlineSchemaRegistry(options =>
+        {
+            options.BaseUrl = baseUrl;
+        });
     }
 }

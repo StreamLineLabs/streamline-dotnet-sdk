@@ -55,13 +55,17 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
     private readonly ProducerOptions _options;
     private readonly ILogger _logger;
     private readonly Confluent.Kafka.IProducer<byte[], byte[]> _kafkaProducer;
+    private readonly CircuitBreaker? _circuitBreaker;
     private bool _disposed;
+    private bool _inTransaction;
+    private readonly List<(string Topic, TKey? Key, TValue Value, TaskCompletionSource<RecordMetadata> Tcs)> _transactionBuffer = new();
 
-    public Producer(StreamlineOptions clientOptions, ProducerOptions options, ILogger logger)
+    public Producer(StreamlineOptions clientOptions, ProducerOptions options, ILogger logger, CircuitBreaker? circuitBreaker = null)
     {
         _clientOptions = clientOptions;
         _options = options;
         _logger = logger;
+        _circuitBreaker = circuitBreaker;
 
         var config = new ProducerConfig
         {
@@ -116,6 +120,14 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (_circuitBreaker is not null && !_circuitBreaker.Allow())
+        {
+            throw new StreamlineException(
+                "Circuit breaker is open — too many recent failures",
+                isRetryable: true,
+                hint: "The client detected repeated failures and is temporarily pausing requests.");
+        }
+
         _logger.LogDebug("Sending message to topic {Topic}", topic);
 
         var keyBytes = key != null ? SerializeToBytes(key) : null;
@@ -136,13 +148,22 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
             }
         }
 
-        var result = await _kafkaProducer.ProduceAsync(topic, message, cancellationToken);
+        try
+        {
+            var result = await _kafkaProducer.ProduceAsync(topic, message, cancellationToken);
+            _circuitBreaker?.RecordSuccess();
 
-        return new RecordMetadata(
-            Topic: result.Topic,
-            Partition: result.Partition.Value,
-            Offset: result.Offset.Value,
-            Timestamp: result.Timestamp.UtcDateTime);
+            return new RecordMetadata(
+                Topic: result.Topic,
+                Partition: result.Partition.Value,
+                Offset: result.Offset.Value,
+                Timestamp: result.Timestamp.UtcDateTime);
+        }
+        catch
+        {
+            _circuitBreaker?.RecordFailure();
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<RecordMetadata>> SendBatchAsync(
@@ -151,6 +172,14 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_circuitBreaker is not null && !_circuitBreaker.Allow())
+        {
+            throw new StreamlineException(
+                "Circuit breaker is open — too many recent failures",
+                isRetryable: true,
+                hint: "The client detected repeated failures and is temporarily pausing requests.");
+        }
 
         var results = new List<RecordMetadata>();
         var tasks = new List<Task<DeliveryResult<byte[], byte[]>>>();
@@ -173,18 +202,80 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
 
         _logger.LogDebug("Sending batch of {Count} messages to topic {Topic}", tasks.Count, topic);
 
-        var deliveryResults = await Task.WhenAll(tasks);
-
-        foreach (var result in deliveryResults)
+        try
         {
-            results.Add(new RecordMetadata(
-                Topic: result.Topic,
-                Partition: result.Partition.Value,
-                Offset: result.Offset.Value,
-                Timestamp: result.Timestamp.UtcDateTime));
-        }
+            var deliveryResults = await Task.WhenAll(tasks);
 
-        return results;
+            foreach (var result in deliveryResults)
+            {
+                results.Add(new RecordMetadata(
+                    Topic: result.Topic,
+                    Partition: result.Partition.Value,
+                    Offset: result.Offset.Value,
+                    Timestamp: result.Timestamp.UtcDateTime));
+            }
+
+            _circuitBreaker?.RecordSuccess();
+            return results;
+        }
+        catch
+        {
+            _circuitBreaker?.RecordFailure();
+            throw;
+        }
+    }
+
+    /// <summary>Begin a new transaction.</summary>
+    public void BeginTransaction()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_inTransaction) throw new InvalidOperationException("Transaction already in progress");
+        _inTransaction = true;
+        _transactionBuffer.Clear();
+    }
+
+    /// <summary>Buffer a message within the current transaction.</summary>
+    public Task<RecordMetadata> SendTransactionalAsync(string topic, TKey? key, TValue value)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_inTransaction) throw new InvalidOperationException("No transaction in progress");
+        var tcs = new TaskCompletionSource<RecordMetadata>();
+        _transactionBuffer.Add((topic, key, value, tcs));
+        return tcs.Task;
+    }
+
+    /// <summary>Commit the transaction, sending all buffered records.</summary>
+    public async Task<IReadOnlyList<RecordMetadata>> CommitTransactionAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_inTransaction) throw new InvalidOperationException("No transaction in progress");
+        try
+        {
+            var results = new List<RecordMetadata>();
+            foreach (var (topic, key, value, tcs) in _transactionBuffer)
+            {
+                var result = await SendAsync(topic, key, value, ct).ConfigureAwait(false);
+                tcs.TrySetResult(result);
+                results.Add(result);
+            }
+            return results;
+        }
+        finally
+        {
+            _inTransaction = false;
+            _transactionBuffer.Clear();
+        }
+    }
+
+    /// <summary>Abort the transaction, discarding all buffered records.</summary>
+    public void AbortTransaction()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_inTransaction) throw new InvalidOperationException("No transaction in progress");
+        foreach (var (_, _, _, tcs) in _transactionBuffer)
+            tcs.TrySetCanceled();
+        _inTransaction = false;
+        _transactionBuffer.Clear();
     }
 
     public Task FlushAsync(CancellationToken cancellationToken = default)

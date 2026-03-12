@@ -38,6 +38,24 @@ public interface IAdminClient : IAsyncDisposable
 
     /// <summary>Check if the server is healthy.</summary>
     Task<bool> IsHealthyAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Get cluster overview including broker list.</summary>
+    Task<ClusterInfo> GetClusterInfoAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Get consumer group lag information.</summary>
+    Task<ConsumerGroupLag> GetConsumerGroupLagAsync(string groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Get consumer lag for a specific topic within a group.</summary>
+    Task<ConsumerGroupLag> GetConsumerGroupTopicLagAsync(string groupId, string topic, CancellationToken cancellationToken = default);
+
+    /// <summary>Browse messages from a topic partition.</summary>
+    Task<IReadOnlyList<InspectedMessage>> InspectMessagesAsync(string topic, int partition = 0, long? offset = null, int limit = 20, CancellationToken cancellationToken = default);
+
+    /// <summary>Get the latest messages from a topic.</summary>
+    Task<IReadOnlyList<InspectedMessage>> LatestMessagesAsync(string topic, int count = 10, CancellationToken cancellationToken = default);
+
+    /// <summary>Get metrics history from the server.</summary>
+    Task<IReadOnlyList<MetricPoint>> MetricsHistoryAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -148,6 +166,88 @@ public record ServerInfo
     /// <summary>Total message count.</summary>
     [JsonPropertyName("message_count")]
     public long MessageCount { get; init; }
+}
+
+/// <summary>Cluster information including broker list.</summary>
+public record ClusterInfo
+{
+    /// <summary>Unique cluster identifier.</summary>
+    [JsonPropertyName("cluster_id")] public string ClusterId { get; init; } = "";
+    /// <summary>Local broker identifier.</summary>
+    [JsonPropertyName("broker_id")] public int BrokerId { get; init; }
+    /// <summary>List of brokers in the cluster.</summary>
+    [JsonPropertyName("brokers")] public IReadOnlyList<BrokerInfo> Brokers { get; init; } = [];
+    /// <summary>Controller broker identifier.</summary>
+    [JsonPropertyName("controller")] public int Controller { get; init; } = -1;
+}
+
+/// <summary>Information about a single broker.</summary>
+public record BrokerInfo
+{
+    /// <summary>Broker identifier.</summary>
+    [JsonPropertyName("id")] public int Id { get; init; }
+    /// <summary>Broker hostname.</summary>
+    [JsonPropertyName("host")] public string Host { get; init; } = "";
+    /// <summary>Broker port number.</summary>
+    [JsonPropertyName("port")] public int Port { get; init; } = 9092;
+    /// <summary>Optional rack identifier for rack-aware replication.</summary>
+    [JsonPropertyName("rack")] public string? Rack { get; init; }
+}
+
+/// <summary>Consumer lag for a single partition.</summary>
+public record ConsumerLag
+{
+    /// <summary>Topic name.</summary>
+    [JsonPropertyName("topic")] public string Topic { get; init; } = "";
+    /// <summary>Partition number.</summary>
+    [JsonPropertyName("partition")] public int Partition { get; init; }
+    /// <summary>Current committed offset.</summary>
+    [JsonPropertyName("current_offset")] public long CurrentOffset { get; init; }
+    /// <summary>End (high-watermark) offset of the partition.</summary>
+    [JsonPropertyName("end_offset")] public long EndOffset { get; init; }
+    /// <summary>Consumer lag (end offset minus current offset).</summary>
+    [JsonPropertyName("lag")] public long Lag { get; init; }
+}
+
+/// <summary>Aggregated consumer group lag.</summary>
+public record ConsumerGroupLag
+{
+    /// <summary>Consumer group identifier.</summary>
+    [JsonPropertyName("group_id")] public string GroupId { get; init; } = "";
+    /// <summary>Per-partition lag details.</summary>
+    [JsonPropertyName("partitions")] public IReadOnlyList<ConsumerLag> Partitions { get; init; } = [];
+    /// <summary>Total lag across all partitions.</summary>
+    [JsonPropertyName("total_lag")] public long TotalLag { get; init; }
+}
+
+/// <summary>A message returned by the inspection API.</summary>
+public record InspectedMessage
+{
+    /// <summary>Message offset within the partition.</summary>
+    [JsonPropertyName("offset")] public long Offset { get; init; }
+    /// <summary>Message key, or null if unkeyed.</summary>
+    [JsonPropertyName("key")] public string? Key { get; init; }
+    /// <summary>Message value.</summary>
+    [JsonPropertyName("value")] public string Value { get; init; } = "";
+    /// <summary>Message timestamp in milliseconds since epoch.</summary>
+    [JsonPropertyName("timestamp")] public long Timestamp { get; init; }
+    /// <summary>Partition the message belongs to.</summary>
+    [JsonPropertyName("partition")] public int Partition { get; init; }
+    /// <summary>Message headers.</summary>
+    [JsonPropertyName("headers")] public Dictionary<string, string> Headers { get; init; } = new();
+}
+
+/// <summary>A single metric data point.</summary>
+public record MetricPoint
+{
+    /// <summary>Metric name.</summary>
+    [JsonPropertyName("name")] public string Name { get; init; } = "";
+    /// <summary>Metric value.</summary>
+    [JsonPropertyName("value")] public double Value { get; init; }
+    /// <summary>Metric labels (dimensions).</summary>
+    [JsonPropertyName("labels")] public Dictionary<string, string> Labels { get; init; } = new();
+    /// <summary>Timestamp when the metric was recorded.</summary>
+    [JsonPropertyName("timestamp")] public long Timestamp { get; init; }
 }
 
 /// <summary>
@@ -265,6 +365,56 @@ public sealed class AdminClient : IAdminClient
         {
             return false;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<ClusterInfo> GetClusterInfoAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await SendAsync(HttpMethod.Get, "/v1/cluster", cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ClusterInfo>(_jsonOptions, cancellationToken)
+            ?? new ClusterInfo();
+    }
+
+    /// <inheritdoc />
+    public async Task<ConsumerGroupLag> GetConsumerGroupLagAsync(string groupId, CancellationToken cancellationToken = default)
+    {
+        var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{groupId}/lag", cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ConsumerGroupLag>(_jsonOptions, cancellationToken)
+            ?? new ConsumerGroupLag { GroupId = groupId };
+    }
+
+    /// <inheritdoc />
+    public async Task<ConsumerGroupLag> GetConsumerGroupTopicLagAsync(string groupId, string topic, CancellationToken cancellationToken = default)
+    {
+        var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{groupId}/lag/{topic}", cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ConsumerGroupLag>(_jsonOptions, cancellationToken)
+            ?? new ConsumerGroupLag { GroupId = groupId };
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<InspectedMessage>> InspectMessagesAsync(string topic, int partition = 0, long? offset = null, int limit = 20, CancellationToken cancellationToken = default)
+    {
+        var path = $"/v1/inspect/{topic}?partition={partition}&limit={limit}";
+        if (offset.HasValue) path += $"&offset={offset.Value}";
+        var response = await SendAsync(HttpMethod.Get, path, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<List<InspectedMessage>>(_jsonOptions, cancellationToken)
+            ?? [];
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<InspectedMessage>> LatestMessagesAsync(string topic, int count = 10, CancellationToken cancellationToken = default)
+    {
+        var response = await SendAsync(HttpMethod.Get, $"/v1/inspect/{topic}/latest?count={count}", cancellationToken);
+        return await response.Content.ReadFromJsonAsync<List<InspectedMessage>>(_jsonOptions, cancellationToken)
+            ?? [];
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<MetricPoint>> MetricsHistoryAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await SendAsync(HttpMethod.Get, "/v1/metrics/history", cancellationToken);
+        return await response.Content.ReadFromJsonAsync<List<MetricPoint>>(_jsonOptions, cancellationToken)
+            ?? [];
     }
 
     /// <inheritdoc />

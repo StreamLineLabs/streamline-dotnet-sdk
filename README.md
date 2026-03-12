@@ -291,6 +291,39 @@ dotnet test
 | `await consumer.SeekToEndAsync()` | Seek to end |
 | `await consumer.SeekAsync(partition, offset)` | Seek to specific offset |
 
+### Admin Client
+
+```csharp
+var admin = client.CreateAdmin("http://localhost:9094");
+
+// Cluster overview
+var cluster = await admin.GetClusterInfoAsync();
+Console.WriteLine($"Cluster: {cluster.ClusterId}, Brokers: {cluster.Brokers.Count}");
+
+// Consumer group lag monitoring
+var lag = await admin.GetConsumerGroupLagAsync("my-group");
+Console.WriteLine($"Total lag: {lag.TotalLag}");
+foreach (var p in lag.Partitions)
+    Console.WriteLine($"  {p.Topic}:{p.Partition} lag={p.Lag}");
+
+// Message inspection
+var messages = await admin.InspectMessagesAsync("events", partition: 0, limit: 10);
+foreach (var m in messages)
+    Console.WriteLine($"offset={m.Offset} value={m.Value}");
+
+// Latest messages
+var latest = await admin.LatestMessagesAsync("events", count: 5);
+
+// Server metrics
+var metrics = await admin.MetricsHistoryAsync();
+
+// Basic operations
+await admin.CreateTopicAsync("events", partitions: 3);
+var topics = await admin.ListTopicsAsync();
+var info = await admin.GetServerInfoAsync();
+var healthy = await admin.IsHealthyAsync();
+```
+
 ## Error Handling
 
 ```csharp

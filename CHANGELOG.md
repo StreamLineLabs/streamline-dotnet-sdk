@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Circuit breaker pattern (`CircuitBreaker.cs`) with async `ExecuteAsync<T>`, ILogger integration, and state change events
+- Circuit breaker integration in `Producer` — automatically checks CB before SendAsync/SendBatchAsync
 - Circuit breaker test suite (14 tests covering state transitions, ExecuteAsync, exception classification)
 - `SendBatchAsync` on `IProducer<TKey, TValue>` for bulk message publishing with Task.WhenAll
 - Circuit breaker usage example (`CircuitBreakerUsage/Program.cs`)
 - TLS/SASL authentication example (`SecurityUsage/Program.cs`)
+- AdminClient: `GetClusterInfoAsync()`, `GetConsumerGroupLagAsync()`, `GetConsumerGroupTopicLagAsync()`
+- AdminClient: `InspectMessagesAsync()`, `LatestMessagesAsync()`, `MetricsHistoryAsync()`
+- Model types: `ClusterInfo`, `BrokerInfo`, `ConsumerLag`, `ConsumerGroupLag`, `InspectedMessage`, `MetricPoint`
+- Conformance tests: all 38 `Skip=TODO` stubs replaced with real implementations (P05–P08, C03–C08, G01–G06, A01–A06, S01–S06, E01–E04, F01–F04)
 
 ### Fixed
 - `StreamlineClient.ProduceAsync` now delegates to real Confluent.Kafka producer (was returning fake metadata)

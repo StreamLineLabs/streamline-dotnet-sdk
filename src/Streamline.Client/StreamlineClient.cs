@@ -179,14 +179,10 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
         }
         GC.SuppressFinalize(this);
     }
-}
-
 
     // Internal helper to guard against use-after-dispose
     private void EnsureNotDisposed()
     {
-        if (_disposed)
-        {
-            throw new ObjectDisposedException(nameof(StreamlineClient));
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
+}

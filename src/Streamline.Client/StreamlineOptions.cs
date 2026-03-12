@@ -159,6 +159,19 @@ public class ConsumerOptions
     /// Maximum records per poll.
     /// </summary>
     public int MaxPollRecords { get; set; } = 500;
+
+    /// <summary>
+    /// Callback invoked when partitions are assigned to this consumer during a rebalance.
+    /// Receives the list of assigned topic-partition pairs.
+    /// </summary>
+    public Action<IReadOnlyList<TopicPartitionInfo>>? OnPartitionsAssigned { get; set; }
+
+    /// <summary>
+    /// Callback invoked when partitions are revoked from this consumer during a rebalance.
+    /// Receives the list of revoked topic-partition-offset triples.
+    /// Use this to commit offsets or perform cleanup before partitions are reassigned.
+    /// </summary>
+    public Action<IReadOnlyList<TopicPartitionOffsetInfo>>? OnPartitionsRevoked { get; set; }
 }
 
 /// <summary>
@@ -265,4 +278,14 @@ public class SaslOptions
     /// </summary>
     public string? Password { get; set; }
 }
+
+/// <summary>
+/// Represents a topic-partition assignment.
+/// </summary>
+public record TopicPartitionInfo(string Topic, int Partition);
+
+/// <summary>
+/// Represents a topic-partition with a committed offset.
+/// </summary>
+public record TopicPartitionOffsetInfo(string Topic, int Partition, long Offset);
 

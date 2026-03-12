@@ -107,7 +107,33 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
             config.SaslPassword = sasl.Password;
         }
 
-        _kafkaConsumer = new ConsumerBuilder<byte[], byte[]>(config).Build();
+        _kafkaConsumer = new ConsumerBuilder<byte[], byte[]>(config)
+            .SetPartitionsAssignedHandler((_, partitions) =>
+            {
+                if (_options.OnPartitionsAssigned is { } handler)
+                {
+                    var infos = partitions
+                        .Select(tp => new TopicPartitionInfo(tp.Topic, tp.Partition.Value))
+                        .ToList();
+                    handler(infos);
+                }
+                _logger.LogInformation("Partitions assigned: {Partitions}",
+                    string.Join(", ", partitions.Select(p => $"{p.Topic}-{p.Partition.Value}")));
+            })
+            .SetPartitionsRevokedHandler((_, partitions) =>
+            {
+                if (_options.OnPartitionsRevoked is { } handler)
+                {
+                    var infos = partitions
+                        .Select(tpo => new TopicPartitionOffsetInfo(
+                            tpo.Topic, tpo.Partition.Value, tpo.Offset.Value))
+                        .ToList();
+                    handler(infos);
+                }
+                _logger.LogInformation("Partitions revoked: {Partitions}",
+                    string.Join(", ", partitions.Select(p => $"{p.Topic}-{p.Partition.Value}")));
+            })
+            .Build();
     }
 
     public Task SubscribeAsync(CancellationToken cancellationToken = default)
@@ -267,20 +293,6 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         }
         return ValueTask.CompletedTask;
     }
-}
-
-/// <summary>
-/// A record received from a consumer poll.
-/// </summary>
-public record ConsumerRecord<TKey, TValue>(
-    string Topic,
-    int Partition,
-    long Offset,
-    DateTimeOffset Timestamp,
-    TKey? Key,
-    TValue Value,
-    Headers Headers);
-
 
     /// <summary>
     /// Validates that the given offset is within valid range.
@@ -295,3 +307,16 @@ public record ConsumerRecord<TKey, TValue>(
                 "Offset must be >= -2 (earliest=-2, latest=-1, or a specific offset >= 0)");
         }
     }
+}
+
+/// <summary>
+/// A record received from a consumer poll.
+/// </summary>
+public record ConsumerRecord<TKey, TValue>(
+    string Topic,
+    int Partition,
+    long Offset,
+    DateTimeOffset Timestamp,
+    TKey? Key,
+    TValue Value,
+    Headers Headers);
