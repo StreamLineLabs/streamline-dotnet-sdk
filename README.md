@@ -413,6 +413,24 @@ var metadata = await breaker.ExecuteAsync(async () =>
 
 When the circuit is open, `ExecuteAsync` throws a retryable `StreamlineException`. See the [Circuit Breaker guide](https://streamlinelabs.dev/docs/features/circuit-breaker) for details.
 
+## Examples
+
+The [`examples/`](examples/) directory contains runnable examples:
+
+| Example | Description |
+|---------|-------------|
+| [BasicUsage.cs](examples/BasicUsage.cs) | Produce, consume, and admin operations |
+| [QueryUsage](examples/QueryUsage/Program.cs) | SQL analytics with the embedded query engine |
+| [SchemaRegistryUsage](examples/SchemaRegistryUsage/Program.cs) | Schema registration and validation |
+| [CircuitBreakerUsage](examples/CircuitBreakerUsage/Program.cs) | Resilient production with circuit breaker |
+| [SecurityUsage](examples/SecurityUsage/Program.cs) | TLS and SASL authentication |
+
+Run any example:
+
+```bash
+dotnet run --project examples/QueryUsage
+```
+
 ## Contributing
 
 Contributions are welcome! Please see the [organization contributing guide](https://github.com/streamlinelabs/.github/blob/main/CONTRIBUTING.md) for guidelines.
