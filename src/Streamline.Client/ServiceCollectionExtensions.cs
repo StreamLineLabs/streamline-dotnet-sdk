@@ -133,4 +133,17 @@ public static class ServiceCollectionExtensions
             options.BaseUrl = baseUrl;
         });
     }
+
+    /// <summary>
+    /// Adds a Streamline health check to the service collection.
+    /// Registers <see cref="StreamlineHealthCheck"/> under the name "streamline".
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddStreamlineHealthChecks(this IServiceCollection services)
+    {
+        services.AddHealthChecks()
+            .AddCheck<StreamlineHealthCheck>("streamline");
+        return services;
+    }
 }
