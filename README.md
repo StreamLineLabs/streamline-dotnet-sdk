@@ -29,6 +29,27 @@ var metadata = await client.ProduceAsync("my-topic", "key", "Hello, Streamline!"
 Console.WriteLine($"Produced to partition {metadata.Partition} at offset {metadata.Offset}");
 ```
 
+### Transactions
+
+```csharp
+using var producer = client.CreateProducer<string, string>();
+await producer.BeginTransactionAsync();
+try
+{
+    await producer.SendAsync("orders", "k1", "v1");
+    await producer.SendAsync("orders", "k2", "v2");
+    await producer.CommitTransactionAsync();
+}
+catch
+{
+    await producer.AbortTransactionAsync();
+    throw;
+}
+```
+
+> **Note:** Transactions use client-side buffering. Messages are collected and sent as a batch
+> on commit, providing all-or-nothing delivery at the client level.
+
 ### Consumer
 
 ```csharp

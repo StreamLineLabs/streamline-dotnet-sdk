@@ -22,6 +22,10 @@ jobs:
 
       - run: dotnet restore
       - run: dotnet build --no-restore
+
+      - name: Verify code formatting
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
       - name: Run unit tests
         run: dotnet test tests/Streamline.Client.Tests --no-build --verbosity normal
 
