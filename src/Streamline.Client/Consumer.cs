@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Text;
 using System.Runtime.CompilerServices;
 using Confluent.Kafka;
@@ -47,6 +48,20 @@ public interface IConsumer<TKey, TValue> : IAsyncDisposable
     /// Seeks to a specific offset.
     /// </summary>
     Task SeekAsync(int partition, long offset, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Searches a topic using semantic search via the HTTP API.
+    /// </summary>
+    /// <param name="topic">Topic to search.</param>
+    /// <param name="query">Free-text search query.</param>
+    /// <param name="k">Maximum number of results (default 10).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A list of search results ordered by descending score.</returns>
+    Task<IReadOnlyList<SearchResult>> SearchAsync(
+        string topic,
+        string query,
+        int k = 10,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -297,6 +312,32 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     /// <summary>
     /// Validates that the given offset is within valid range.
     /// </summary>
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<SearchResult>> SearchAsync(
+        string topic,
+        string query,
+        int k = 10,
+        CancellationToken cancellationToken = default)
+    {
+        var host = _clientOptions.BootstrapServers.Split(',')[0].Split(':')[0];
+        var baseUrl = $"http://{host}:9094";
+
+        using var httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        var request = new { query, k };
+        var response = await httpClient.PostAsJsonAsync(
+            $"/api/v1/topics/{Uri.EscapeDataString(topic)}/search",
+            request,
+            cancellationToken);
+
+        response.EnsureSuccessStatusCode();
+
+        var data = await response.Content.ReadFromJsonAsync<SearchApiResponse>(
+            cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Empty search response");
+
+        return data.Hits;
+    }
+
     private static void ValidateOffset(long offset)
     {
         if (offset < -2)
@@ -308,6 +349,26 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         }
     }
 }
+
+/// <summary>
+/// A single search result from a topic.
+/// </summary>
+/// <param name="Partition">Partition of the matching record.</param>
+/// <param name="Offset">Offset of the matching record.</param>
+/// <param name="Score">Similarity score (higher = more relevant).</param>
+/// <param name="Value">Record value, if returned by the server.</param>
+public record SearchResult(
+    [property: System.Text.Json.Serialization.JsonPropertyName("partition")] int Partition,
+    [property: System.Text.Json.Serialization.JsonPropertyName("offset")] long Offset,
+    [property: System.Text.Json.Serialization.JsonPropertyName("score")] double Score,
+    [property: System.Text.Json.Serialization.JsonPropertyName("value")] System.Text.Json.JsonElement? Value = null);
+
+/// <summary>
+/// Internal response from the search API.
+/// </summary>
+internal record SearchApiResponse(
+    [property: System.Text.Json.Serialization.JsonPropertyName("hits")] SearchResult[] Hits,
+    [property: System.Text.Json.Serialization.JsonPropertyName("took_ms")] long TookMs);
 
 /// <summary>
 /// A record received from a consumer poll.

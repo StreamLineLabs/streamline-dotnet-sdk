@@ -100,6 +100,9 @@ public class TracedProducer<TKey, TValue> : IProducer<TKey, TValue>
         => _producer.FlushAsync(cancellationToken);
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
-        => _producer.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await _producer.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
 }

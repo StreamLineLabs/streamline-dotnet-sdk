@@ -10,11 +10,13 @@ public class StreamlineHealthCheck : IHealthCheck
 {
     private readonly IStreamlineClient _client;
 
+    /// <summary>Constructs the health check with the given Streamline client.</summary>
     public StreamlineHealthCheck(IStreamlineClient client)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }
 
+    /// <inheritdoc />
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)

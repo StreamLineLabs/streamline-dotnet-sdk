@@ -101,6 +101,9 @@ public class TracedConsumer<TKey, TValue> : IConsumer<TKey, TValue>
         => _consumer.SeekAsync(partition, offset, cancellationToken);
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
-        => _consumer.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await _consumer.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
 }

@@ -25,6 +25,16 @@ public enum StreamlineErrorCode
     Serialization,
     /// <summary>Invalid configuration.</summary>
     Configuration,
+    /// <summary>Contract violation.</summary>
+    ContractViolation,
+    /// <summary>Attestation verification failed.</summary>
+    AttestationFailed,
+    /// <summary>Memory access denied.</summary>
+    MemoryAccessDenied,
+    /// <summary>Branch quota exceeded.</summary>
+    BranchQuotaExceeded,
+    /// <summary>Semantic search unavailable.</summary>
+    SemanticSearchUnavailable,
 }
 
 /// <summary>
@@ -179,6 +189,75 @@ public class StreamlineConfigurationException : StreamlineException
     /// <inheritdoc />
     public StreamlineConfigurationException(string message)
         : base(message, StreamlineErrorCode.Configuration, isRetryable: false)
+    {
+    }
+}
+
+/// <summary>
+/// Thrown when a record violates a topic's data contract.
+/// </summary>
+public class StreamlineContractViolationException : StreamlineException
+{
+    /// <summary>The topic where the contract was violated.</summary>
+    public string Topic { get; }
+
+    /// <inheritdoc />
+    public StreamlineContractViolationException(string topic, string details)
+        : base($"Contract violation on topic '{topic}': {details}", StreamlineErrorCode.ContractViolation, isRetryable: false,
+               hint: "Validate the record against the topic's registered schema")
+    {
+        Topic = topic;
+    }
+}
+
+/// <summary>
+/// Thrown when attestation signature verification fails.
+/// </summary>
+public class StreamlineAttestationException : StreamlineException
+{
+    /// <inheritdoc />
+    public StreamlineAttestationException(string message, Exception? innerException = null)
+        : base(message, StreamlineErrorCode.AttestationFailed, isRetryable: false,
+               hint: "Check the signing key and attestation configuration", innerException: innerException)
+    {
+    }
+}
+
+/// <summary>
+/// Thrown when an agent lacks permission to access memory.
+/// </summary>
+public class StreamlineMemoryAccessDeniedException : StreamlineException
+{
+    /// <inheritdoc />
+    public StreamlineMemoryAccessDeniedException(string agent)
+        : base($"Memory access denied for agent: {agent}", StreamlineErrorCode.MemoryAccessDenied, isRetryable: false,
+               hint: "Verify agent permissions for memory operations")
+    {
+    }
+}
+
+/// <summary>
+/// Thrown when a branch exceeds its storage or lifetime quota.
+/// </summary>
+public class StreamlineBranchQuotaExceededException : StreamlineException
+{
+    /// <inheritdoc />
+    public StreamlineBranchQuotaExceededException(string branch, string details)
+        : base($"Branch quota exceeded for '{branch}': {details}", StreamlineErrorCode.BranchQuotaExceeded, isRetryable: false,
+               hint: "Increase branch quotas or clean up unused branches")
+    {
+    }
+}
+
+/// <summary>
+/// Thrown when semantic search is unavailable (embedding provider down).
+/// </summary>
+public class StreamlineSemanticSearchUnavailableException : StreamlineException
+{
+    /// <inheritdoc />
+    public StreamlineSemanticSearchUnavailableException(string message, Exception? innerException = null)
+        : base(message, StreamlineErrorCode.SemanticSearchUnavailable, isRetryable: true,
+               hint: "Check embedding provider connectivity and configuration", innerException: innerException)
     {
     }
 }
