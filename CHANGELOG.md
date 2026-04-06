@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Streamline.Client.Moonshot` namespace — async HTTP clients for the
+  Streamline Moonshot control plane (port `9094`): `BranchesClient`,
+  `ContractsClient`, `AttestationClient`, `SearchClient`, `MemoryClient`.
+- Clients implement `IAsyncDisposable`; share `MoonshotClientOptions` and
+  `MoonshotException`.
+
+### Added
 - Circuit breaker pattern (`CircuitBreaker.cs`) with async `ExecuteAsync<T>`, ILogger integration, and state change events
 - Circuit breaker integration in `Producer` — automatically checks CB before SendAsync/SendBatchAsync
 - Circuit breaker test suite (14 tests covering state transitions, ExecuteAsync, exception classification)

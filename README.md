@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-8%2B-purple.svg)](https://dotnet.microsoft.com/)
 [![Docs](https://img.shields.io/badge/docs-streamlinelabs.dev-blue.svg)](https://streamlinelabs.dev/docs/sdks/dotnet)
+[![NuGet](https://img.shields.io/nuget/v/Streamline.Client.svg)](https://www.nuget.org/packages/Streamline.Client)
 
 Native .NET client library for Streamline streaming platform.
 
@@ -450,6 +451,59 @@ Run any example:
 
 ```bash
 dotnet run --project examples/QueryUsage
+```
+
+## Moonshot Features
+
+> ⚠️ **Experimental** — These features require Streamline server 0.3.0+ with moonshot feature flags enabled.
+
+### Semantic Search
+
+Query topics by meaning instead of offset. Requires a topic created with `semantic.embed=true`.
+
+```csharp
+var results = await client.SearchAsync("logs.app", "payment failure", k: 10);
+foreach (var hit in results)
+{
+    Console.WriteLine($"[p{hit.Partition}] offset={hit.Offset} score={hit.Score:F2}");
+}
+```
+
+### Attestation Verification
+
+Verify cryptographic provenance attestations attached to records by data contracts.
+
+```csharp
+using Streamline.Client;
+
+var verifier = new StreamlineVerifier(publicKeyBytes);
+var result = verifier.Verify(record);
+Console.WriteLine($"Verified: {result.Verified}, Producer: {result.ProducerId}");
+```
+
+### Agent Memory (MCP)
+
+Use Streamline as persistent memory for AI agents via the MCP protocol.
+
+```csharp
+using Streamline.Client;
+
+var memory = new MemoryClient("http://localhost:9094/mcp/v1");
+await memory.RememberAsync("user prefers dark mode", tags: new[] { "preferences" });
+var results = await memory.RecallAsync("user preferences", k: 5);
+```
+
+### Branched Streams
+
+Create topic branches for replay, A/B testing, or counterfactual analysis.
+
+```csharp
+var branch = await admin.CreateBranchAsync("events", "experiment-v2");
+await using var consumer = client.CreateConsumer<string, string>(branch.Topic, "branch-group");
+await foreach (var record in consumer.ConsumeAsync())
+{
+    Process(record);
+}
 ```
 
 ## Contributing
