@@ -8,7 +8,7 @@
 
     <!-- Package metadata -->
     <PackageId>Streamline.Client</PackageId>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Streamline Team</Authors>
     <Company>Streamline</Company>
     <Description>Native .NET client for Streamline streaming platform</Description>
