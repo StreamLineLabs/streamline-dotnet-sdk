@@ -299,6 +299,7 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task<TopicMetadata> DescribeTopicAsync(string topic, CancellationToken cancellationToken = default)
     {
+        TopicNameValidator.Validate(topic);
         var response = await SendAsync(HttpMethod.Get, $"/v1/topics/{Uri.EscapeDataString(topic)}", cancellationToken);
         return await DeserializeAsync<TopicMetadata>(response, cancellationToken)
             ?? throw new StreamlineTopicNotFoundException(topic);
@@ -307,6 +308,7 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task CreateTopicAsync(string topic, int partitions = 1, int replicationFactor = 1, Dictionary<string, string>? config = null, CancellationToken cancellationToken = default)
     {
+        TopicNameValidator.Validate(topic);
         var body = new { name = topic, partitions, replication_factor = replicationFactor, config };
         await SendAsync(HttpMethod.Post, "/v1/topics", cancellationToken, body);
     }
@@ -314,6 +316,7 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task DeleteTopicAsync(string topic, CancellationToken cancellationToken = default)
     {
+        TopicNameValidator.Validate(topic);
         await SendAsync(HttpMethod.Delete, $"/v1/topics/{Uri.EscapeDataString(topic)}", cancellationToken);
     }
 
@@ -386,6 +389,7 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task<ConsumerGroupLag> GetConsumerGroupTopicLagAsync(string groupId, string topic, CancellationToken cancellationToken = default)
     {
+        TopicNameValidator.Validate(topic);
         var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{groupId}/lag/{topic}", cancellationToken);
         return await response.Content.ReadFromJsonAsync<ConsumerGroupLag>(_jsonOptions, cancellationToken)
             ?? new ConsumerGroupLag { GroupId = groupId };
@@ -394,6 +398,7 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task<IReadOnlyList<InspectedMessage>> InspectMessagesAsync(string topic, int partition = 0, long? offset = null, int limit = 20, CancellationToken cancellationToken = default)
     {
+        TopicNameValidator.Validate(topic);
         var path = $"/v1/inspect/{topic}?partition={partition}&limit={limit}";
         if (offset.HasValue) path += $"&offset={offset.Value}";
         var response = await SendAsync(HttpMethod.Get, path, cancellationToken);
@@ -404,6 +409,7 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task<IReadOnlyList<InspectedMessage>> LatestMessagesAsync(string topic, int count = 10, CancellationToken cancellationToken = default)
     {
+        TopicNameValidator.Validate(topic);
         var response = await SendAsync(HttpMethod.Get, $"/v1/inspect/{topic}/latest?count={count}", cancellationToken);
         return await response.Content.ReadFromJsonAsync<List<InspectedMessage>>(_jsonOptions, cancellationToken)
             ?? [];

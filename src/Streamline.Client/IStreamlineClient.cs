@@ -51,9 +51,14 @@ public interface IStreamlineClient : IAsyncDisposable
 
     /// <summary>
     /// Creates an admin client for topic, consumer group, and server management
-    /// via the HTTP REST API.
+    /// via the HTTP REST API, using the configured HTTP base URL.
     /// </summary>
-    /// <param name="httpBaseUrl">Base URL of the HTTP API (default: http://localhost:9094).</param>
-    IAdminClient CreateAdmin(string httpBaseUrl = "http://localhost:9094");
+    IAdminClient CreateAdmin();
+
+    /// <summary>
+    /// Creates an admin client with an explicit HTTP base URL.
+    /// </summary>
+    /// <param name="httpBaseUrl">Base URL of the HTTP API.</param>
+    IAdminClient CreateAdmin(string httpBaseUrl);
 }
 

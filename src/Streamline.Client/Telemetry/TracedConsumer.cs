@@ -101,6 +101,14 @@ public class TracedConsumer<TKey, TValue> : IConsumer<TKey, TValue>
         => _consumer.SeekAsync(partition, offset, cancellationToken);
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<SearchResult>> SearchAsync(
+        string topic,
+        string query,
+        int k = 10,
+        CancellationToken cancellationToken = default)
+        => _consumer.SearchAsync(topic, query, k, cancellationToken);
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         await _consumer.DisposeAsync().ConfigureAwait(false);

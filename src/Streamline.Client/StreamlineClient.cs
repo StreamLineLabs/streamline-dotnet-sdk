@@ -161,9 +161,18 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
 
     /// <summary>
     /// Creates an admin client for topic, consumer group, and server management.
+    /// Uses the HTTP base URL from <see cref="StreamlineOptions.Admin"/>.
     /// </summary>
-    /// <param name="httpBaseUrl">Base URL of the HTTP API (default: http://localhost:9094).</param>
-    public IAdminClient CreateAdmin(string httpBaseUrl = "http://localhost:9094")
+    public IAdminClient CreateAdmin()
+    {
+        return new AdminClient(_options.Admin.HttpBaseUrl, _options.Admin.AuthToken);
+    }
+
+    /// <summary>
+    /// Creates an admin client with an explicit HTTP base URL.
+    /// </summary>
+    /// <param name="httpBaseUrl">Base URL of the HTTP API.</param>
+    public IAdminClient CreateAdmin(string httpBaseUrl)
     {
         return new AdminClient(httpBaseUrl);
     }

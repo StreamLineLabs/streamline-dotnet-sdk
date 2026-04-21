@@ -253,13 +253,9 @@ public sealed class ConnectionManager : IAsyncDisposable
             ConnectTimeout = options.ConnectTimeout,
         };
 
-        // Parse the first bootstrap server for the HTTP API base address (port 9094)
-        var server = options.BootstrapServers.Split(',')[0].Trim();
-        var host = server.Contains(':') ? server[..server.LastIndexOf(':')] : server;
-
         return new HttpClient(handler)
         {
-            BaseAddress = new Uri($"http://{host}:9094"),
+            BaseAddress = new Uri(options.Admin.HttpBaseUrl),
             Timeout = options.RequestTimeout,
         };
     }

@@ -119,6 +119,7 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        TopicNameValidator.Validate(topic);
 
         if (_circuitBreaker is not null && !_circuitBreaker.Allow())
         {
@@ -172,6 +173,7 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        TopicNameValidator.Validate(topic);
 
         if (_circuitBreaker is not null && !_circuitBreaker.Allow())
         {
@@ -238,6 +240,7 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
     public Task<RecordMetadata> SendTransactionalAsync(string topic, TKey? key, TValue value)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        TopicNameValidator.Validate(topic);
         if (!_inTransaction) throw new InvalidOperationException("No transaction in progress");
         var tcs = new TaskCompletionSource<RecordMetadata>();
         _transactionBuffer.Add((topic, key, value, tcs));

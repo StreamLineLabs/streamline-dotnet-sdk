@@ -83,6 +83,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         ConsumerOptions options,
         ILogger logger)
     {
+        TopicNameValidator.Validate(topic);
         _clientOptions = clientOptions;
         _topic = topic;
         _options = options;
@@ -319,8 +320,8 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         int k = 10,
         CancellationToken cancellationToken = default)
     {
-        var host = _clientOptions.BootstrapServers.Split(',')[0].Split(':')[0];
-        var baseUrl = $"http://{host}:9094";
+        TopicNameValidator.Validate(topic);
+        var baseUrl = _clientOptions.Admin.HttpBaseUrl;
 
         using var httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
         var request = new { query, k };
