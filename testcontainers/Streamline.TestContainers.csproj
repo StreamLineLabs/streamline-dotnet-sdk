@@ -8,7 +8,7 @@
 
     <!-- Package metadata -->
     <PackageId>Streamline.TestContainers</PackageId>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Streamline Team</Authors>
     <Company>Streamline</Company>
     <Description>Testcontainers module for Streamline - The Redis of Streaming. Provides a lightweight, Kafka-compatible container for integration testing.</Description>
