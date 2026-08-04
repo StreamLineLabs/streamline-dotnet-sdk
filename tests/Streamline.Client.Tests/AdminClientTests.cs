@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Streamline.Client;
+using Streamline.TestSupport;
 using Xunit;
 
 namespace Streamline.Client.Tests;
@@ -13,12 +14,12 @@ public class AdminClientTests
     private static HttpClient MockHttp(HttpStatusCode status, string body)
     {
         var handler = new MockHttpHandler(status, body);
-        return new HttpClient(handler) { BaseAddress = new Uri("http://localhost:9094") };
+        return new HttpClient(handler) { BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl) };
     }
 
     private static HttpClient MockHttp(Func<HttpRequestMessage, HttpResponseMessage> handler)
     {
-        return new HttpClient(new DelegatingMockHandler(handler)) { BaseAddress = new Uri("http://localhost:9094") };
+        return new HttpClient(new DelegatingMockHandler(handler)) { BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl) };
     }
 
     // =========================================================================
@@ -133,7 +134,7 @@ public class AdminClientTests
     [Fact]
     public async Task ListConsumerGroupsAsync_ReturnsGroups()
     {
-        var json = """[{"id":"group-1","state":"Stable","members":["m1"]},{"id":"group-2","state":"Empty","members":[]}]""";
+        var json = """[{"id":"group-1","state":"Stable","members":[{"id":"m1","client_id":"c1","host":"10.0.0.1"}]},{"id":"group-2","state":"Empty","members":[]}]""";
         var http = MockHttp(HttpStatusCode.OK, json);
         await using var admin = new AdminClient(http);
 
@@ -142,6 +143,8 @@ public class AdminClientTests
         Assert.Equal(2, groups.Count);
         Assert.Equal("group-1", groups[0].Id);
         Assert.Equal("Stable", groups[0].State);
+        Assert.Equal("m1", Assert.Single(groups[0].Members!).Id);
+        Assert.Empty(groups[1].Members!);
     }
 
     [Fact]

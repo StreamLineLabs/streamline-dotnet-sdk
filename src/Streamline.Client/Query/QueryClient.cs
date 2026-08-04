@@ -45,15 +45,39 @@ public record QueryMetadata(
 /// </summary>
 public class QueryClient : IDisposable
 {
+    /// <summary>
+    /// Bound applied to HTTP requests when the caller does not supply one.
+    /// </summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+
     private readonly HttpClient _httpClient;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="QueryClient"/> class.
+    /// Initializes a new instance of the <see cref="QueryClient"/> class using
+    /// <see cref="DefaultTimeout"/> for requests.
     /// </summary>
     /// <param name="baseUrl">Base URL of the Streamline HTTP API.</param>
     public QueryClient(string baseUrl = "http://localhost:9094")
+        : this(baseUrl, timeout: null)
     {
-        _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/')) };
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="QueryClient"/> class with an explicit
+    /// request timeout.
+    /// </summary>
+    /// <param name="baseUrl">Base URL of the Streamline HTTP API.</param>
+    /// <param name="timeout">
+    /// Bound applied to every HTTP request. Defaults to <see cref="DefaultTimeout"/> when null.
+    /// </param>
+    public QueryClient(string baseUrl, TimeSpan? timeout)
+    {
+        ArgumentNullException.ThrowIfNull(baseUrl);
+        _httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(baseUrl.TrimEnd('/')),
+            Timeout = timeout ?? DefaultTimeout,
+        };
     }
 
     /// <summary>Execute a SQL query.</summary>

@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# The Streamline server image used by the integration/conformance jobs.
+# Override per-repository with the `STREAMLINE_IMAGE` variable so the pipeline is not
+# pinned to a tag that may not exist.
+env:
+  STREAMLINE_IMAGE: ${{ vars.STREAMLINE_IMAGE || 'ghcr.io/streamlinelabs/streamline:latest' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,8 +32,33 @@ jobs:
       - name: Verify code formatting
         run: dotnet format --verify-no-changes --verbosity diagnostic
 
-      - name: Run unit tests
-        run: dotnet test tests/Streamline.Client.Tests --no-build --verbosity normal
+      # No server is started here on purpose: the default suite must be hermetic.
+      # Broker-dependent tests are skipped unless STREAMLINE_INTEGRATION is set.
+      # The timeout is the regression guard: a suite that reaches for localhost hangs.
+      - name: Run hermetic tests
+        timeout-minutes: 5
+        run: dotnet test --no-build --verbosity normal
+
+      - name: Verify broker-dependent tests are classified
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          output=$(dotnet test tests/Streamline.Client.Tests --no-build --filter "Category!=Integration" --verbosity normal)
+          echo "$output"
+          if echo "$output" | grep -qE "Skipped: +[1-9]"; then
+            echo "::error::Tests were skipped by the hermetic filter; broker-dependent tests must be marked [IntegrationFact]"
+            exit 1
+          fi
+
+      - name: Verify packaging
+        run: |
+          dotnet build --no-restore --configuration Release
+          dotnet pack --no-build --configuration Release -o ./artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: ./artifacts/*.nupkg
 
   conformance:
     runs-on: ubuntu-latest
@@ -61,6 +92,10 @@ jobs:
 
       - name: Run conformance tests
         run: dotnet test tests/Streamline.Conformance --filter "Category=Conformance" --no-build --verbosity normal
+        env:
+          STREAMLINE_INTEGRATION: "1"
+          STREAMLINE_BOOTSTRAP_SERVERS: localhost:9092
+          STREAMLINE_HTTP_URL: http://localhost:9094
 
       - name: Stop Streamline server
         if: always()

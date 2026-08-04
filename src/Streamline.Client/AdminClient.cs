@@ -256,6 +256,12 @@ public record MetricPoint
 /// </summary>
 public sealed class AdminClient : IAdminClient
 {
+    /// <summary>
+    /// Bound applied to HTTP requests when the caller does not supply one, so a
+    /// missing server surfaces as a timeout rather than a hang.
+    /// </summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -265,13 +271,32 @@ public sealed class AdminClient : IAdminClient
     };
 
     /// <summary>
-    /// Creates an admin client for the specified HTTP API base URL.
+    /// Creates an admin client for the specified HTTP API base URL, using
+    /// <see cref="DefaultTimeout"/> for requests.
     /// </summary>
     /// <param name="httpBaseUrl">Base URL of the Streamline HTTP API (e.g., "http://localhost:9094").</param>
     /// <param name="authToken">Optional bearer token for authentication.</param>
     public AdminClient(string httpBaseUrl, string? authToken = null)
+        : this(httpBaseUrl, authToken, timeout: null)
     {
-        _httpClient = new HttpClient { BaseAddress = new Uri(httpBaseUrl) };
+    }
+
+    /// <summary>
+    /// Creates an admin client for the specified HTTP API base URL with an explicit
+    /// request timeout.
+    /// </summary>
+    /// <param name="httpBaseUrl">Base URL of the Streamline HTTP API (e.g., "http://localhost:9094").</param>
+    /// <param name="authToken">Optional bearer token for authentication.</param>
+    /// <param name="timeout">
+    /// Bound applied to every HTTP request. Defaults to <see cref="DefaultTimeout"/> when null.
+    /// </param>
+    public AdminClient(string httpBaseUrl, string? authToken, TimeSpan? timeout)
+    {
+        _httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(httpBaseUrl),
+            Timeout = timeout ?? DefaultTimeout,
+        };
         if (authToken is not null)
         {
             _httpClient.DefaultRequestHeaders.Authorization =

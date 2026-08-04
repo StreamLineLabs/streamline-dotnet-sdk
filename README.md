@@ -267,17 +267,53 @@ See the [testcontainers README](./testcontainers/README.md) for full documentati
 
 ### Manual Integration Tests
 
-Start a local Streamline server:
+The default test run is **hermetic**: `dotnet test` never contacts a broker, an HTTP
+endpoint, or `localhost`, and it completes in seconds. Broker-dependent tests are tagged
+`Category=Integration` and skipped unless you opt in.
 
 ```bash
-docker compose -f docker-compose.test.yml up -d
+dotnet restore
+dotnet build --no-restore
+dotnet test --no-build            # hermetic; no server needed
 ```
 
-Run tests:
+To run the broker-dependent tests, start a server and set `STREAMLINE_INTEGRATION=1`:
 
 ```bash
-dotnet test
+# The image is configurable — pin it to a build you can actually pull.
+STREAMLINE_IMAGE=ghcr.io/streamlinelabs/streamline:0.3.0 \
+  docker compose -f docker-compose.test.yml up -d --wait
+
+STREAMLINE_INTEGRATION=1 dotnet test --filter "Category=Integration"
+
+docker compose -f docker-compose.test.yml down -v
 ```
+
+Or use the Make targets, which wire the same variables together:
+
+```bash
+make test              # hermetic suite
+make integration-up    # start the server
+make integration-test  # opt-in broker tests
+make conformance-test  # opt-in conformance suite
+make integration-down  # stop the server
+make test-all          # up + integration-test + down
+```
+
+When `STREAMLINE_INTEGRATION` is enabled but the endpoints are unreachable, the suite
+**fails fast** with an actionable message instead of retrying `localhost` — it never
+reports a false pass against a missing server.
+
+#### Test environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `STREAMLINE_INTEGRATION` | *(unset)* | Set to `1`/`true`/`yes`/`on` to run broker-dependent tests |
+| `STREAMLINE_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka-protocol endpoint (alias: `STREAMLINE_BOOTSTRAP`) |
+| `STREAMLINE_HTTP_URL` | `http://localhost:9094` | HTTP management endpoint (alias: `STREAMLINE_HTTP`) |
+| `STREAMLINE_IMAGE` | `ghcr.io/streamlinelabs/streamline:latest` | Server image used by `docker-compose.test.yml` |
+| `STREAMLINE_KAFKA_PORT` / `STREAMLINE_HTTP_PORT` | `9092` / `9094` | Host ports published by the compose stack |
+| `STREAMLINE_READY_TIMEOUT_SECONDS` | `20` | Bound on the readiness probe (clamped to 1–300) |
 
 ## API Reference
 
@@ -441,13 +477,14 @@ The [`examples/`](examples/) directory contains runnable examples:
 
 | Example | Description |
 |---------|-------------|
-| [BasicUsage.cs](examples/BasicUsage.cs) | Produce, consume, and admin operations |
+| [BasicUsage](examples/BasicUsage/Program.cs) | Produce, consume, and admin operations |
 | [QueryUsage](examples/QueryUsage/Program.cs) | SQL analytics with the embedded query engine |
 | [SchemaRegistryUsage](examples/SchemaRegistryUsage/Program.cs) | Schema registration and validation |
 | [CircuitBreakerUsage](examples/CircuitBreakerUsage/Program.cs) | Resilient production with circuit breaker |
 | [SecurityUsage](examples/SecurityUsage/Program.cs) | TLS and SASL authentication |
 
-Run any example:
+Every example is a project in the solution, so `dotnet build` compiles them and API drift
+breaks the build. Run any example:
 
 ```bash
 dotnet run --project examples/QueryUsage

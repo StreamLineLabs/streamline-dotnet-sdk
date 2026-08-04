@@ -182,9 +182,10 @@ public class CircuitBreaker
             RecordSuccess();
             return result;
         }
-        catch (StreamlineException ex) when (ex.IsRetryable)
+        catch (StreamlineException ex) when (!ex.IsRetryable)
         {
-            RecordFailure();
+            // Non-retryable failures (bad credentials, invalid config) signal a caller
+            // problem rather than an unhealthy broker, so they must not trip the circuit.
             throw;
         }
         catch (Exception)

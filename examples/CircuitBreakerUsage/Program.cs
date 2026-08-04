@@ -1,7 +1,7 @@
 // Demonstrates the circuit breaker pattern for resilient message production.
 //
 // Run with:
-//   dotnet run --project examples/CircuitBreakerUsage/CircuitBreakerUsage.csproj
+//   dotnet run --project examples/CircuitBreakerUsage
 
 using Streamline.Client;
 

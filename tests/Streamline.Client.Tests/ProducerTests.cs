@@ -1,13 +1,24 @@
-using Streamline.Client;
+using Streamline.TestSupport;
 using Xunit;
 
 namespace Streamline.Client.Tests;
 
+/// <summary>
+/// Hermetic producer tests. The librdkafka handle is created lazily, so creating,
+/// validating and disposing a producer never contacts a broker.
+/// </summary>
 public class ProducerTests
 {
-    private IProducer<string, string> CreateProducer(ProducerOptions? options = null)
+    private static StreamlineOptions UnitOptions() => new()
     {
-        var client = new StreamlineClient("localhost:9092");
+        BootstrapServers = StreamlineTestEnvironment.UnitBootstrapServers,
+        ConnectTimeout = TimeSpan.FromMilliseconds(100),
+        RequestTimeout = TimeSpan.FromMilliseconds(100),
+    };
+
+    private static IProducer<string, string> CreateProducer(ProducerOptions? options = null)
+    {
+        var client = new StreamlineClient(UnitOptions());
         return options != null
             ? client.CreateProducer<string, string>(options)
             : client.CreateProducer<string, string>();
@@ -42,7 +53,7 @@ public class ProducerTests
     [Fact]
     public void CreateProducer_WithDifferentTypeParameters_ReturnsProducer()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         var producer = client.CreateProducer<int, byte[]>();
         Assert.NotNull(producer);
     }
@@ -50,88 +61,31 @@ public class ProducerTests
     [Fact]
     public async Task CreateProducer_AfterClientDisposed_ThrowsObjectDisposedException()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         await client.DisposeAsync();
 
         Assert.Throws<ObjectDisposedException>(() => client.CreateProducer<string, string>());
     }
 
-    // --- SendAsync ---
+    // --- Argument validation (fails before any network access) ---
 
     [Fact]
-    public async Task SendAsync_ReturnsRecordMetadata()
-    {
-        var producer = CreateProducer();
-        var result = await producer.SendAsync("test-topic", "key1", "value1");
-
-        Assert.Equal("test-topic", result.Topic);
-        Assert.Equal(0, result.Partition);
-        Assert.True(result.Offset > 0);
-        Assert.True(result.Timestamp <= DateTimeOffset.UtcNow);
-    }
-
-    [Fact]
-    public async Task SendAsync_WithNullKey_Succeeds()
-    {
-        var producer = CreateProducer();
-        var result = await producer.SendAsync("test-topic", null, "value1");
-
-        Assert.Equal("test-topic", result.Topic);
-    }
-
-    [Fact]
-    public async Task SendAsync_WithHeaders_ReturnsRecordMetadata()
-    {
-        var producer = CreateProducer();
-        var headers = new Headers()
-            .Add("trace-id", "abc-123")
-            .Add("source", "unit-test");
-
-        var result = await producer.SendAsync("test-topic", "key1", "value1", headers);
-
-        Assert.Equal("test-topic", result.Topic);
-        Assert.Equal(0, result.Partition);
-        Assert.True(result.Offset > 0);
-    }
-
-    [Fact]
-    public async Task SendAsync_WithNullHeaders_Succeeds()
-    {
-        var producer = CreateProducer();
-        var result = await producer.SendAsync("test-topic", "key1", "value1", null);
-
-        Assert.Equal("test-topic", result.Topic);
-    }
-
-    [Fact]
-    public async Task SendAsync_MultipleTimes_EachReturnsMetadata()
-    {
-        var producer = CreateProducer();
-
-        var result1 = await producer.SendAsync("topic-a", "k1", "v1");
-        var result2 = await producer.SendAsync("topic-b", "k2", "v2");
-
-        Assert.Equal("topic-a", result1.Topic);
-        Assert.Equal("topic-b", result2.Topic);
-    }
-
-    [Fact]
-    public async Task SendAsync_WithCancellationToken_CanBeCancelled()
+    public async Task SendAsync_WithCancelledToken_DoesNotSend()
     {
         var producer = CreateProducer();
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => producer.SendAsync("test-topic", "key", "value", cts.Token));
     }
 
     [Fact]
-    public async Task SendAsync_WithHeadersAndCancellationToken_CanBeCancelled()
+    public async Task SendAsync_WithHeadersAndCancelledToken_DoesNotSend()
     {
         var producer = CreateProducer();
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => producer.SendAsync("test-topic", "key", "value", new Headers(), cts.Token));
@@ -140,7 +94,7 @@ public class ProducerTests
     // --- FlushAsync ---
 
     [Fact]
-    public async Task FlushAsync_CompletesSuccessfully()
+    public async Task FlushAsync_WithNothingProduced_CompletesSuccessfully()
     {
         var producer = CreateProducer();
         await producer.FlushAsync();
@@ -192,6 +146,16 @@ public class ProducerTests
             () => producer.SendAsync("test-topic", "key", "value", new Headers()));
     }
 
+    [Fact]
+    public async Task SendBatchAsync_AfterDispose_ThrowsObjectDisposedException()
+    {
+        var producer = CreateProducer();
+        await producer.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => producer.SendBatchAsync("test-topic", [((string?)"k", "v")]));
+    }
+
     // --- RecordMetadata ---
 
     [Fact]
@@ -224,5 +188,85 @@ public class ProducerTests
         Assert.Equal(3, metadata.Partition);
         Assert.Equal(42, metadata.Offset);
         Assert.Equal(ts, metadata.Timestamp);
+    }
+}
+
+/// <summary>
+/// Producer tests that require a live broker to accept and acknowledge records.
+/// </summary>
+[Collection(IntegrationCollection.Name)]
+public class ProducerIntegrationTests
+{
+    private readonly IntegrationServerFixture _server;
+
+    /// <summary>Creates the test class with the shared integration fixture.</summary>
+    /// <param name="server">Fixture describing the configured Streamline endpoints.</param>
+    public ProducerIntegrationTests(IntegrationServerFixture server)
+    {
+        _server = server;
+    }
+
+    private IProducer<string, string> CreateProducer()
+    {
+        var client = new StreamlineClient(new StreamlineOptions
+        {
+            BootstrapServers = _server.BootstrapServers,
+            Admin = new AdminOptions { HttpBaseUrl = _server.HttpBaseUrl },
+        });
+        return client.CreateProducer<string, string>();
+    }
+
+    [IntegrationFact]
+    public async Task SendAsync_ReturnsRecordMetadata()
+    {
+        await using var producer = CreateProducer();
+        var result = await producer.SendAsync("test-topic", "key1", "value1");
+
+        Assert.Equal("test-topic", result.Topic);
+        Assert.True(result.Offset >= 0);
+        Assert.True(result.Timestamp <= DateTimeOffset.UtcNow);
+    }
+
+    [IntegrationFact]
+    public async Task SendAsync_WithNullKey_Succeeds()
+    {
+        await using var producer = CreateProducer();
+        var result = await producer.SendAsync("test-topic", null, "value1");
+
+        Assert.Equal("test-topic", result.Topic);
+    }
+
+    [IntegrationFact]
+    public async Task SendAsync_WithHeaders_ReturnsRecordMetadata()
+    {
+        await using var producer = CreateProducer();
+        var headers = new Headers()
+            .Add("trace-id", "abc-123")
+            .Add("source", "integration-test");
+
+        var result = await producer.SendAsync("test-topic", "key1", "value1", headers);
+
+        Assert.Equal("test-topic", result.Topic);
+        Assert.True(result.Offset >= 0);
+    }
+
+    [IntegrationFact]
+    public async Task SendAsync_MultipleTimes_EachReturnsMetadata()
+    {
+        await using var producer = CreateProducer();
+
+        var result1 = await producer.SendAsync("topic-a", "k1", "v1");
+        var result2 = await producer.SendAsync("topic-b", "k2", "v2");
+
+        Assert.Equal("topic-a", result1.Topic);
+        Assert.Equal("topic-b", result2.Topic);
+    }
+
+    [IntegrationFact]
+    public async Task FlushAsync_AfterSend_CompletesSuccessfully()
+    {
+        await using var producer = CreateProducer();
+        await producer.SendAsync("test-topic", "k", "v");
+        await producer.FlushAsync();
     }
 }

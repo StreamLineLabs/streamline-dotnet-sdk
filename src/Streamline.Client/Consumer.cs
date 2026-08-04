@@ -73,9 +73,32 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     private readonly string _topic;
     private readonly ConsumerOptions _options;
     private readonly ILogger _logger;
-    private readonly Confluent.Kafka.IConsumer<byte[], byte[]> _kafkaConsumer;
+    private readonly Lazy<Confluent.Kafka.IConsumer<byte[], byte[]>> _kafkaConsumerFactory;
+    private readonly object _handleLock = new();
     private bool _subscribed;
     private bool _disposed;
+
+    /// <summary>
+    /// The underlying librdkafka consumer, created on first use so that constructing a
+    /// consumer never opens a connection.
+    /// </summary>
+    /// <remarks>
+    /// Creation is serialised with disposal: without the lock a caller that passed the
+    /// <c>_disposed</c> check could build a fresh native handle after
+    /// <see cref="DisposeAsync"/> had already decided there was nothing to clean up,
+    /// leaking the handle and its broker threads.
+    /// </remarks>
+    private Confluent.Kafka.IConsumer<byte[], byte[]> KafkaConsumer
+    {
+        get
+        {
+            lock (_handleLock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return _kafkaConsumerFactory.Value;
+            }
+        }
+    }
 
     public Consumer(
         StreamlineOptions clientOptions,
@@ -104,6 +127,8 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
             SecurityProtocol = MapSecurityProtocol(clientOptions.SecurityProtocol),
         };
 
+        KafkaTimeouts.Apply(config, clientOptions);
+
         if (clientOptions.Tls is { } tls)
         {
             if (tls.CaCertificatePath is not null)
@@ -123,33 +148,35 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
             config.SaslPassword = sasl.Password;
         }
 
-        _kafkaConsumer = new ConsumerBuilder<byte[], byte[]>(config)
-            .SetPartitionsAssignedHandler((_, partitions) =>
-            {
-                if (_options.OnPartitionsAssigned is { } handler)
+        _kafkaConsumerFactory = new Lazy<Confluent.Kafka.IConsumer<byte[], byte[]>>(
+            () => new ConsumerBuilder<byte[], byte[]>(config)
+                .SetPartitionsAssignedHandler((_, partitions) =>
                 {
-                    var infos = partitions
-                        .Select(tp => new TopicPartitionInfo(tp.Topic, tp.Partition.Value))
-                        .ToList();
-                    handler(infos);
-                }
-                _logger.LogInformation("Partitions assigned: {Partitions}",
-                    string.Join(", ", partitions.Select(p => $"{p.Topic}-{p.Partition.Value}")));
-            })
-            .SetPartitionsRevokedHandler((_, partitions) =>
-            {
-                if (_options.OnPartitionsRevoked is { } handler)
+                    if (_options.OnPartitionsAssigned is { } handler)
+                    {
+                        var infos = partitions
+                            .Select(tp => new TopicPartitionInfo(tp.Topic, tp.Partition.Value))
+                            .ToList();
+                        handler(infos);
+                    }
+                    _logger.LogInformation("Partitions assigned: {Partitions}",
+                        string.Join(", ", partitions.Select(p => $"{p.Topic}-{p.Partition.Value}")));
+                })
+                .SetPartitionsRevokedHandler((_, partitions) =>
                 {
-                    var infos = partitions
-                        .Select(tpo => new TopicPartitionOffsetInfo(
-                            tpo.Topic, tpo.Partition.Value, tpo.Offset.Value))
-                        .ToList();
-                    handler(infos);
-                }
-                _logger.LogInformation("Partitions revoked: {Partitions}",
-                    string.Join(", ", partitions.Select(p => $"{p.Topic}-{p.Partition.Value}")));
-            })
-            .Build();
+                    if (_options.OnPartitionsRevoked is { } handler)
+                    {
+                        var infos = partitions
+                            .Select(tpo => new TopicPartitionOffsetInfo(
+                                tpo.Topic, tpo.Partition.Value, tpo.Offset.Value))
+                            .ToList();
+                        handler(infos);
+                    }
+                    _logger.LogInformation("Partitions revoked: {Partitions}",
+                        string.Join(", ", partitions.Select(p => $"{p.Topic}-{p.Partition.Value}")));
+                })
+                .Build(),
+            LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     public Task SubscribeAsync(CancellationToken cancellationToken = default)
@@ -159,7 +186,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         if (!_subscribed)
         {
             _logger.LogInformation("Subscribing to topic {Topic}", _topic);
-            _kafkaConsumer.Subscribe(_topic);
+            KafkaConsumer.Subscribe(_topic);
             _subscribed = true;
         }
 
@@ -176,8 +203,10 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
             throw new InvalidOperationException("Consumer is not subscribed");
         }
 
-        while (!cancellationToken.IsCancellationRequested)
+        while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var records = await PollAsync(TimeSpan.FromMilliseconds(100), cancellationToken);
             foreach (var record in records)
             {
@@ -191,6 +220,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_subscribed)
         {
@@ -200,11 +230,13 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         var results = new List<ConsumerRecord<TKey, TValue>>();
         var deadline = DateTime.UtcNow.Add(timeout);
 
-        while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+        while (DateTime.UtcNow < deadline)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
-                var result = _kafkaConsumer.Consume(TimeSpan.FromMilliseconds(50));
+                var result = KafkaConsumer.Consume(TimeSpan.FromMilliseconds(50));
                 if (result?.Message == null) continue;
 
                 var key = result.Message.Key != null
@@ -244,7 +276,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     public Task CommitAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _kafkaConsumer.Commit();
+        KafkaConsumer.Commit();
         _logger.LogDebug("Offsets committed");
         return Task.CompletedTask;
     }
@@ -252,11 +284,11 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     public Task SeekToBeginningAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var assignment = _kafkaConsumer.Assignment;
+        var assignment = KafkaConsumer.Assignment;
         var offsets = assignment.Select(tp => new TopicPartitionOffset(tp, Confluent.Kafka.Offset.Beginning)).ToList();
         foreach (var tpo in offsets)
         {
-            _kafkaConsumer.Seek(tpo);
+            KafkaConsumer.Seek(tpo);
         }
         _logger.LogDebug("Seeking to beginning");
         return Task.CompletedTask;
@@ -265,11 +297,11 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     public Task SeekToEndAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var assignment = _kafkaConsumer.Assignment;
+        var assignment = KafkaConsumer.Assignment;
         var offsets = assignment.Select(tp => new TopicPartitionOffset(tp, Confluent.Kafka.Offset.End)).ToList();
         foreach (var tpo in offsets)
         {
-            _kafkaConsumer.Seek(tpo);
+            KafkaConsumer.Seek(tpo);
         }
         _logger.LogDebug("Seeking to end");
         return Task.CompletedTask;
@@ -278,7 +310,8 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
     public Task SeekAsync(int partition, long offset, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _kafkaConsumer.Seek(new TopicPartitionOffset(_topic, partition, offset));
+        ValidateOffset(offset);
+        KafkaConsumer.Seek(new TopicPartitionOffset(_topic, partition, offset));
         _logger.LogDebug("Seeking partition {Partition} to offset {Offset}", partition, offset);
         return Task.CompletedTask;
     }
@@ -300,19 +333,42 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
 
     public ValueTask DisposeAsync()
     {
-        if (!_disposed)
+        Confluent.Kafka.IConsumer<byte[], byte[]>? consumer = null;
+
+        lock (_handleLock)
         {
-            _kafkaConsumer.Close();
-            _kafkaConsumer.Dispose();
+            if (_disposed)
+                return ValueTask.CompletedTask;
+
             _disposed = true;
-            _logger.LogInformation("Consumer disposed");
+
+            // Read the handle under the same lock that guards creation, so a concurrent
+            // first use cannot build a handle that this dispose would then miss.
+            if (_kafkaConsumerFactory.IsValueCreated)
+                consumer = _kafkaConsumerFactory.Value;
         }
+
+        if (consumer is not null)
+        {
+            // Close() leaves the consumer group and commits final offsets; it can
+            // fail outright when the broker is unreachable, which must not mask
+            // disposal of the handle.
+            try
+            {
+                consumer.Close();
+            }
+            catch (KafkaException ex)
+            {
+                _logger.LogDebug(ex, "Consumer close failed during dispose");
+            }
+
+            consumer.Dispose();
+        }
+
+        _logger.LogInformation("Consumer disposed");
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>
-    /// Validates that the given offset is within valid range.
-    /// </summary>
     /// <inheritdoc />
     public async Task<IReadOnlyList<SearchResult>> SearchAsync(
         string topic,
@@ -323,7 +379,11 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         TopicNameValidator.Validate(topic);
         var baseUrl = _clientOptions.Admin.HttpBaseUrl;
 
-        using var httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        using var httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(baseUrl),
+            Timeout = _clientOptions.Admin.Timeout,
+        };
         var request = new { query, k };
         var response = await httpClient.PostAsJsonAsync(
             $"/api/v1/topics/{Uri.EscapeDataString(topic)}/search",
@@ -339,6 +399,9 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         return data.Hits;
     }
 
+    /// <summary>
+    /// Validates that a seek target is a well-known sentinel or a real offset.
+    /// </summary>
     private static void ValidateOffset(long offset)
     {
         if (offset < -2)

@@ -5,7 +5,7 @@
 // - SASL authentication (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)
 //
 // Run with:
-//   dotnet run --project examples/SecurityUsage/SecurityUsage.csproj
+//   dotnet run --project examples/SecurityUsage
 
 using Streamline.Client;
 
@@ -17,8 +17,9 @@ var bootstrapServers = Environment.GetEnvironmentVariable("STREAMLINE_BOOTSTRAP_
 Console.WriteLine("=== TLS Connection ===");
 try
 {
-    await using var client = new StreamlineClient(bootstrapServers, new StreamlineOptions
+    await using var client = new StreamlineClient(new StreamlineOptions
     {
+        BootstrapServers = bootstrapServers,
         SecurityProtocol = SecurityProtocol.Ssl,
         Tls = new TlsOptions
         {
@@ -46,8 +47,9 @@ catch (StreamlineException ex)
 Console.WriteLine("\n=== SASL PLAIN Authentication ===");
 try
 {
-    await using var client = new StreamlineClient(bootstrapServers, new StreamlineOptions
+    await using var client = new StreamlineClient(new StreamlineOptions
     {
+        BootstrapServers = bootstrapServers,
         SecurityProtocol = SecurityProtocol.SaslPlaintext,
         Sasl = new SaslOptions
         {
@@ -73,8 +75,9 @@ catch (StreamlineException ex)
 Console.WriteLine("\n=== SASL SCRAM-SHA-256 + TLS ===");
 try
 {
-    await using var client = new StreamlineClient(bootstrapServers, new StreamlineOptions
+    await using var client = new StreamlineClient(new StreamlineOptions
     {
+        BootstrapServers = bootstrapServers,
         SecurityProtocol = SecurityProtocol.SaslSsl,
         Tls = new TlsOptions
         {

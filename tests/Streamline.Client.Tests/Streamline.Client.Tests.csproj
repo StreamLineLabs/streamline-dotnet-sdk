@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Streamline.Client\Streamline.Client.csproj" />
+    <ProjectReference Include="..\Streamline.TestSupport\Streamline.TestSupport.csproj" />
   </ItemGroup>
 
 </Project>

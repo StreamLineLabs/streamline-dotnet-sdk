@@ -7,8 +7,19 @@
 ```bash
 dotnet restore                              # Restore packages
 dotnet build --no-restore                   # Build
-dotnet test --no-build --verbosity normal   # Run tests
+dotnet test --no-build --verbosity normal   # Run the hermetic test suite (no server needed)
 ```
+
+The default test run is **hermetic and bounded**: it contacts no broker, no HTTP
+endpoint, and no `localhost`. Broker-dependent tests are opt-in:
+
+```bash
+STREAMLINE_IMAGE=<image> docker compose -f docker-compose.test.yml up -d --wait
+STREAMLINE_INTEGRATION=1 dotnet test --filter "Category=Integration"
+```
+
+When `STREAMLINE_INTEGRATION` is set but the endpoints are unreachable, the run
+**fails fast** with an actionable message rather than skipping or retrying.
 
 ## Architecture
 ```
@@ -31,9 +42,13 @@ src/Streamline.Client/
 │   └── Headers.cs
 └── Internal/
     ├── ConnectionManager.cs
+    ├── KafkaTimeouts.cs         # Bounded librdkafka timeouts
     └── RetryPolicy.cs
 
-tests/Streamline.Client.Tests/  # xUnit test project
+tests/Streamline.Client.Tests/  # xUnit unit tests (hermetic by default)
+tests/Streamline.Conformance/   # Cross-SDK conformance suite (opt-in)
+tests/Streamline.TestSupport/   # Shared test gating: IntegrationFact, fixtures, probes
+examples/                       # Runnable example projects (compiled by the solution)
 benchmarks/                     # BenchmarkDotNet project
 testcontainers/                 # Testcontainers integration
 ```
@@ -59,3 +74,15 @@ await foreach (var record in consumer.ConsumeAsync<string, string>(cancellationT
 - xUnit 2.6 for unit tests
 - BenchmarkDotNet for performance benchmarks
 - Testcontainers 3.10 for integration tests
+- **Hermetic by default**: a unit test must never open a connection. Client handles are
+  created lazily, so constructing a producer/consumer does not connect.
+- Never point a unit test at `localhost`. Use
+  `StreamlineTestEnvironment.UnitBootstrapServers` / `UnitHttpBaseUrl` (RFC 6761
+  `.invalid` hosts) or an `HttpMessageHandler` stub.
+- Tests that genuinely need a server use `[IntegrationFact]` / `[IntegrationTheory]`
+  from `Streamline.TestSupport` and join `[Collection(IntegrationCollection.Name)]`.
+  Each test assembly declares its own `[CollectionDefinition]` — xUnit only discovers
+  them in the assembly under test.
+- Every network client must have a bounded timeout. `KafkaTimeouts` maps
+  `StreamlineOptions.RequestTimeout` / `ConnectTimeout` onto librdkafka settings;
+  `HttpClient` instances must set `Timeout`.
