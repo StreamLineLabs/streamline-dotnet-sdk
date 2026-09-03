@@ -32,6 +32,19 @@ jobs:
       - name: Verify code formatting
         run: dotnet format --verify-no-changes --verbosity diagnostic
 
+      # Lints and tests the release-blocker scripts (scripts/*.sh) that gate release
+      # publication on a validated, immutable conformance image digest and on a
+      # non-zero executed test count. shellcheck ships preinstalled on this runner
+      # image; bats does not, so it is installed explicitly.
+      - name: Lint release-blocker scripts
+        run: shellcheck scripts/*.sh
+
+      - name: Install bats
+        run: sudo apt-get update -y && sudo apt-get install -y bats
+
+      - name: Test release-blocker scripts
+        run: bats scripts/tests
+
       # No server is started here on purpose: the default suite must be hermetic.
       # Broker-dependent tests are skipped unless STREAMLINE_INTEGRATION is set.
       # The timeout is the regression guard: a suite that reaches for localhost hangs.

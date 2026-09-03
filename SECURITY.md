@@ -4,8 +4,13 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.2.x   | :white_check_mark: |
-| < 0.2   | :x:                |
+| 0.4.x   | :white_check_mark: |
+| <= 0.3.x | :x:               |
+
+The SDK currently targets `net8.0`. Security fixes are validated against the .NET 8
+target and the repository's hermetic test suite. Server compatibility is qualified
+through the opt-in conformance suite against an explicitly selected Streamline image
+or endpoint; there is no blanket guarantee for every server version.
 
 ## Reporting a Vulnerability
 
@@ -31,4 +36,3 @@ We follow responsible disclosure practices and will credit reporters (with permi
 ## Security Best Practices
 
 For production deployments, please review the [Streamline Security Documentation](https://github.com/streamlinelabs/streamline-docs).
-

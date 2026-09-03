@@ -14,7 +14,7 @@ Thank you for your interest in contributing to the Streamline .NET SDK! This gui
 
 ## Prerequisites
 
-- .NET 8.0 SDK or later
+- A .NET SDK capable of targeting `net8.0`; CI uses the .NET 8 SDK
 
 ## Development Setup
 

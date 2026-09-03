@@ -14,7 +14,7 @@ build.
 
 ## Prerequisites
 
-- .NET 8+
+- A .NET SDK capable of targeting `net8.0` (CI uses the .NET 8 SDK)
 - A running Streamline server (default: `localhost:9092` / `http://localhost:9094`)
 
 ## Running
@@ -24,7 +24,7 @@ available to you:
 
 ```bash
 # Via the test compose stack
-STREAMLINE_IMAGE=ghcr.io/streamlinelabs/streamline:0.3.0 \
+STREAMLINE_IMAGE=ghcr.io/streamlinelabs/streamline:TESTED_TAG \
   docker compose -f ../docker-compose.test.yml up -d --wait
 
 # Or via Homebrew

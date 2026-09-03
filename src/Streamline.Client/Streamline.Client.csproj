@@ -17,6 +17,7 @@
     <PackageProjectUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</PackageProjectUrl>
     <RepositoryUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Build settings -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -28,6 +29,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Streamline.Client.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="\" Link="README.md" />
   </ItemGroup>
 
   <ItemGroup>
