@@ -386,7 +386,7 @@ internal class Consumer<TKey, TValue> : IConsumer<TKey, TValue>
         };
         var request = new { query, k };
         var response = await httpClient.PostAsJsonAsync(
-            $"/api/v1/topics/{Uri.EscapeDataString(topic)}/search",
+            $"/api/v1/topics/{UrlPathSegment.Escape(topic, nameof(topic))}/search",
             request,
             cancellationToken);
 

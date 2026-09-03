@@ -1,4 +1,5 @@
 using System.Text;
+using System.Runtime.ExceptionServices;
 using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 
@@ -47,9 +48,69 @@ public interface IProducer<TKey, TValue> : IAsyncDisposable
 }
 
 /// <summary>
+/// Producer capability for client-buffered transactions.
+/// </summary>
+/// <remarks>
+/// These transactions are not broker transactions. A commit sends buffered records
+/// in order, but a send failure can occur after earlier records were delivered.
+/// Aborting only discards records that have not started sending.
+/// </remarks>
+public interface ITransactionalProducer<TKey, TValue> : IProducer<TKey, TValue>
+{
+    /// <summary>
+    /// Begins a client-buffered transaction.
+    /// </summary>
+    void BeginTransaction();
+
+    /// <summary>
+    /// Buffers a record for the active transaction.
+    /// </summary>
+    /// <remarks>
+    /// The returned task completes when the transaction commits. Do not await it
+    /// before calling <see cref="CommitTransactionAsync"/>.
+    /// </remarks>
+    /// <param name="topic">The topic name.</param>
+    /// <param name="key">The record key.</param>
+    /// <param name="value">The record value.</param>
+    /// <returns>A task that resolves to delivery metadata after commit.</returns>
+    Task<RecordMetadata> SendTransactionalAsync(string topic, TKey? key, TValue value);
+
+    /// <summary>
+    /// Buffers a record with headers for the active transaction.
+    /// </summary>
+    /// <remarks>
+    /// The returned task completes when the transaction commits. Do not await it
+    /// before calling <see cref="CommitTransactionAsync"/>.
+    /// </remarks>
+    /// <param name="topic">The topic name.</param>
+    /// <param name="key">The record key.</param>
+    /// <param name="value">The record value.</param>
+    /// <param name="headers">Optional record headers.</param>
+    /// <returns>A task that resolves to delivery metadata after commit.</returns>
+    Task<RecordMetadata> SendTransactionalAsync(
+        string topic,
+        TKey? key,
+        TValue value,
+        Headers? headers);
+
+    /// <summary>
+    /// Sends the buffered records in order.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Delivery metadata for records sent before the commit completed.</returns>
+    Task<IReadOnlyList<RecordMetadata>> CommitTransactionAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Aborts the active transaction and cancels its pending delivery tasks.
+    /// </summary>
+    void AbortTransaction();
+}
+
+/// <summary>
 /// Asynchronous producer for Streamline, backed by Confluent.Kafka for wire protocol compatibility.
 /// </summary>
-internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
+internal class Producer<TKey, TValue> : ITransactionalProducer<TKey, TValue>
 {
     private readonly StreamlineOptions _clientOptions;
     private readonly ProducerOptions _options;
@@ -59,8 +120,15 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
     private readonly object _handleLock = new();
     private bool _disposed;
     private Task? _disposeTask;
+    private readonly object _transactionLock = new();
     private bool _inTransaction;
-    private readonly List<(string Topic, TKey? Key, TValue Value, TaskCompletionSource<RecordMetadata> Tcs)> _transactionBuffer = new();
+    private bool _transactionCommitInProgress;
+    private readonly List<(
+        string Topic,
+        TKey? Key,
+        TValue Value,
+        Headers? Headers,
+        TaskCompletionSource<RecordMetadata> Completion)> _transactionBuffer = new();
 
     /// <summary>
     /// The underlying librdkafka producer, created on first use so that constructing a
@@ -210,6 +278,16 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
                 Offset: result.Offset.Value,
                 Timestamp: result.Timestamp.UtcDateTime);
         }
+        catch (KafkaException ex) when (IsAuthenticationError(ex.Error.Code))
+        {
+            _circuitBreaker?.RecordFailure();
+            throw CreateAuthenticationException(ex);
+        }
+        catch (KafkaException ex) when (IsAuthorizationError(ex.Error.Code))
+        {
+            _circuitBreaker?.RecordFailure();
+            throw CreateAuthorizationException(ex);
+        }
         catch
         {
             _circuitBreaker?.RecordFailure();
@@ -282,54 +360,131 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
     public void BeginTransaction()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_inTransaction) throw new InvalidOperationException("Transaction already in progress");
-        _inTransaction = true;
-        _transactionBuffer.Clear();
+        lock (_transactionLock)
+        {
+            if (_inTransaction || _transactionCommitInProgress)
+                throw new InvalidOperationException("Transaction already in progress");
+
+            _inTransaction = true;
+            _transactionBuffer.Clear();
+        }
     }
 
     /// <summary>Buffer a message within the current transaction.</summary>
     public Task<RecordMetadata> SendTransactionalAsync(string topic, TKey? key, TValue value)
     {
+        return SendTransactionalAsync(topic, key, value, headers: null);
+    }
+
+    /// <summary>Buffer a message with headers within the current transaction.</summary>
+    public Task<RecordMetadata> SendTransactionalAsync(
+        string topic,
+        TKey? key,
+        TValue value,
+        Headers? headers)
+    {
         ObjectDisposedException.ThrowIf(_disposed, this);
         TopicNameValidator.Validate(topic);
-        if (!_inTransaction) throw new InvalidOperationException("No transaction in progress");
-        var tcs = new TaskCompletionSource<RecordMetadata>();
-        _transactionBuffer.Add((topic, key, value, tcs));
-        return tcs.Task;
+
+        lock (_transactionLock)
+        {
+            if (!_inTransaction)
+                throw new InvalidOperationException("No transaction in progress");
+
+            var completion = new TaskCompletionSource<RecordMetadata>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _transactionBuffer.Add((topic, key, value, headers, completion));
+            return completion.Task;
+        }
     }
 
     /// <summary>Commit the transaction, sending all buffered records.</summary>
-    public async Task<IReadOnlyList<RecordMetadata>> CommitTransactionAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<RecordMetadata>> CommitTransactionAsync(
+        CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inTransaction) throw new InvalidOperationException("No transaction in progress");
+        List<(
+            string Topic,
+            TKey? Key,
+            TValue Value,
+            Headers? Headers,
+            TaskCompletionSource<RecordMetadata> Completion)> pending;
+
+        lock (_transactionLock)
+        {
+            if (!_inTransaction)
+                throw new InvalidOperationException("No transaction in progress");
+
+            _inTransaction = false;
+            _transactionCommitInProgress = true;
+            pending = [.. _transactionBuffer];
+            _transactionBuffer.Clear();
+        }
+
+        var results = new List<RecordMetadata>();
+        Exception? failure = null;
         try
         {
-            var results = new List<RecordMetadata>();
-            foreach (var (topic, key, value, tcs) in _transactionBuffer)
+            for (var index = 0; index < pending.Count; index++)
             {
-                var result = await SendAsync(topic, key, value, ct).ConfigureAwait(false);
-                tcs.TrySetResult(result);
+                var item = pending[index];
+                var result = await SendAsync(
+                    item.Topic,
+                    item.Key,
+                    item.Value,
+                    item.Headers,
+                    cancellationToken).ConfigureAwait(false);
                 results.Add(result);
             }
-            return results;
+        }
+        catch (Exception ex)
+        {
+            failure = ex;
         }
         finally
         {
-            _inTransaction = false;
-            _transactionBuffer.Clear();
+            lock (_transactionLock)
+            {
+                _transactionCommitInProgress = false;
+            }
+
+            for (var index = 0; index < results.Count; index++)
+                pending[index].Completion.TrySetResult(results[index]);
+
+            if (failure is OperationCanceledException && cancellationToken.IsCancellationRequested)
+            {
+                CancelPending(pending, results.Count, cancellationToken);
+            }
+            else if (failure is not null)
+            {
+                FailPending(pending, results.Count, failure);
+            }
         }
+
+        if (failure is not null)
+            ExceptionDispatchInfo.Capture(failure).Throw();
+
+        return results;
     }
 
     /// <summary>Abort the transaction, discarding all buffered records.</summary>
     public void AbortTransaction()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_inTransaction) throw new InvalidOperationException("No transaction in progress");
-        foreach (var (_, _, _, tcs) in _transactionBuffer)
-            tcs.TrySetCanceled();
-        _inTransaction = false;
-        _transactionBuffer.Clear();
+        List<TaskCompletionSource<RecordMetadata>> pending;
+
+        lock (_transactionLock)
+        {
+            if (!_inTransaction)
+                throw new InvalidOperationException("No transaction in progress");
+
+            pending = _transactionBuffer.Select(item => item.Completion).ToList();
+            _inTransaction = false;
+            _transactionBuffer.Clear();
+        }
+
+        foreach (var completion in pending)
+            completion.TrySetCanceled();
     }
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
@@ -407,6 +562,7 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
                 return new ValueTask(_disposeTask);
 
             _disposed = true;
+            CancelBufferedTransaction();
 
             // Read the handle under the same lock that guards creation, so a concurrent
             // first use cannot build a handle that this dispose would then miss.
@@ -420,6 +576,72 @@ internal class Producer<TKey, TValue> : IProducer<TKey, TValue>
             _disposeTask = DisposeProducerAsync(_kafkaProducerFactory.Value);
             return new ValueTask(_disposeTask);
         }
+    }
+
+    private void CancelBufferedTransaction()
+    {
+        List<TaskCompletionSource<RecordMetadata>> pending;
+        lock (_transactionLock)
+        {
+            pending = _transactionBuffer.Select(item => item.Completion).ToList();
+            _inTransaction = false;
+            _transactionBuffer.Clear();
+        }
+
+        foreach (var completion in pending)
+            completion.TrySetCanceled();
+    }
+
+    private static void CancelPending(
+        List<(
+            string Topic,
+            TKey? Key,
+            TValue Value,
+            Headers? Headers,
+            TaskCompletionSource<RecordMetadata> Completion)> pending,
+        int startIndex,
+        CancellationToken cancellationToken)
+    {
+        for (var index = startIndex; index < pending.Count; index++)
+            pending[index].Completion.TrySetCanceled(cancellationToken);
+    }
+
+    private static void FailPending(
+        List<(
+            string Topic,
+            TKey? Key,
+            TValue Value,
+            Headers? Headers,
+            TaskCompletionSource<RecordMetadata> Completion)> pending,
+        int startIndex,
+        Exception exception)
+    {
+        for (var index = startIndex; index < pending.Count; index++)
+            pending[index].Completion.TrySetException(exception);
+    }
+
+    private static bool IsAuthenticationError(ErrorCode errorCode)
+    {
+        return errorCode is ErrorCode.SaslAuthenticationFailed or ErrorCode.Local_Authentication;
+    }
+
+    private static bool IsAuthorizationError(ErrorCode errorCode)
+    {
+        return errorCode is ErrorCode.TopicAuthorizationFailed or ErrorCode.ClusterAuthorizationFailed;
+    }
+
+    private static StreamlineAuthenticationException CreateAuthenticationException(KafkaException exception)
+    {
+        return new StreamlineAuthenticationException(
+            $"Authentication failed: {exception.Error.Reason}",
+            exception);
+    }
+
+    private static StreamlineAuthorizationException CreateAuthorizationException(KafkaException exception)
+    {
+        return new StreamlineAuthorizationException(
+            $"Producer authorization failed: {exception.Error.Reason}",
+            exception);
     }
 
     private async Task DisposeProducerAsync(

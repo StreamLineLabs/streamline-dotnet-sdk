@@ -128,6 +128,26 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
     public IProducer<TKey, TValue> CreateProducer<TKey, TValue>(ProducerOptions options)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
+        return new Producer<TKey, TValue>(_options, options, _logger);
+    }
+
+    /// <summary>
+    /// Creates a producer that supports client-buffered transactions.
+    /// </summary>
+    public ITransactionalProducer<TKey, TValue> CreateTransactionalProducer<TKey, TValue>()
+    {
+        return CreateTransactionalProducer<TKey, TValue>(new ProducerOptions());
+    }
+
+    /// <summary>
+    /// Creates a producer with custom configuration that supports client-buffered transactions.
+    /// </summary>
+    public ITransactionalProducer<TKey, TValue> CreateTransactionalProducer<TKey, TValue>(
+        ProducerOptions options)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
         return new Producer<TKey, TValue>(_options, options, _logger);
     }
 

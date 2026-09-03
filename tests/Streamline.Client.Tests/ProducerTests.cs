@@ -59,6 +59,88 @@ public class ProducerTests
     }
 
     [Fact]
+    public async Task CreateTransactionalProducer_ExposesDocumentedCapability()
+    {
+        await using IStreamlineClient client = new StreamlineClient(UnitOptions());
+        await using var producer = client.CreateTransactionalProducer<string, string>();
+
+        Assert.IsAssignableFrom<ITransactionalProducer<string, string>>(producer);
+    }
+
+    [Fact]
+    public async Task Transaction_AbortCancelsBufferedDeliveryTasks()
+    {
+        await using IStreamlineClient client = new StreamlineClient(UnitOptions());
+        await using var producer = client.CreateTransactionalProducer<string, string>();
+        producer.BeginTransaction();
+
+        var pending = producer.SendTransactionalAsync("test-topic", "key", "value");
+        producer.AbortTransaction();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+    }
+
+    [Fact]
+    public async Task Transaction_EmptyCommitCompletesWithoutNetworkAccess()
+    {
+        await using IStreamlineClient client = new StreamlineClient(UnitOptions());
+        await using var producer = client.CreateTransactionalProducer<string, string>();
+        producer.BeginTransaction();
+
+        var metadata = await producer.CommitTransactionAsync();
+
+        Assert.Empty(metadata);
+    }
+
+    [Fact]
+    public async Task Transaction_CancelledCommitSettlesTasksAfterClosingCommitState()
+    {
+        await using IStreamlineClient client = new StreamlineClient(UnitOptions());
+        await using var producer = client.CreateTransactionalProducer<string, string>();
+        using var cancellation = new CancellationTokenSource();
+        producer.BeginTransaction();
+        var pending = producer.SendTransactionalAsync("test-topic", "key", "value");
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => producer.CommitTransactionAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+
+        producer.BeginTransaction();
+        producer.AbortTransaction();
+    }
+
+    [Fact]
+    public async Task Transaction_RejectsInvalidStateTransitions()
+    {
+        await using IStreamlineClient client = new StreamlineClient(UnitOptions());
+        await using var producer = client.CreateTransactionalProducer<string, string>();
+
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            _ = producer.SendTransactionalAsync("test-topic", "key", "value");
+        });
+
+        producer.BeginTransaction();
+        Assert.Throws<InvalidOperationException>(producer.BeginTransaction);
+        producer.AbortTransaction();
+        Assert.Throws<InvalidOperationException>(producer.AbortTransaction);
+    }
+
+    [Fact]
+    public async Task Transaction_DisposeCancelsBufferedDeliveryTasks()
+    {
+        await using IStreamlineClient client = new StreamlineClient(UnitOptions());
+        var producer = client.CreateTransactionalProducer<string, string>();
+        producer.BeginTransaction();
+        var pending = producer.SendTransactionalAsync("test-topic", "key", "value");
+
+        await producer.DisposeAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+    }
+
+    [Fact]
     public async Task CreateProducer_AfterClientDisposed_ThrowsObjectDisposedException()
     {
         var client = new StreamlineClient(UnitOptions());

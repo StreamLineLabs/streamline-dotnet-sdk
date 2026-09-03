@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Streamline.TestSupport;
 using Xunit;
 
@@ -139,6 +140,45 @@ public class StreamlineClientTests
         }
 
         await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Interface_CreateAdminWithExplicitToken_IsAvailable()
+    {
+        await using IStreamlineClient client = CreateClient();
+        await using var admin = client.CreateAdmin(
+            StreamlineTestEnvironment.UnitHttpBaseUrl,
+            "test-token");
+
+        Assert.NotNull(admin);
+    }
+
+    [Fact]
+    public async Task AddStreamline_ResolvesWithoutExplicitLoggingRegistration()
+    {
+        var services = new ServiceCollection();
+        services.AddStreamline(options =>
+        {
+            options.BootstrapServers = StreamlineTestEnvironment.UnitBootstrapServers;
+            options.Admin.HttpBaseUrl = StreamlineTestEnvironment.UnitHttpBaseUrl;
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredService<IStreamlineClient>();
+
+        Assert.NotNull(client);
+    }
+
+    [Fact]
+    public void AddStreamline_ValidatesRequiredArguments()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentNullException>(
+            () => ServiceCollectionExtensions.AddStreamline(null!, _ => { }));
+        Assert.Throws<ArgumentNullException>(
+            () => services.AddStreamline((Action<StreamlineOptions>)null!));
+        Assert.Throws<ArgumentException>(() => services.AddStreamline(" "));
     }
 }
 

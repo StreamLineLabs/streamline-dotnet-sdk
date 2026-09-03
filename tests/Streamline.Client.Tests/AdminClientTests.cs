@@ -161,6 +161,68 @@ public class AdminClientTests
         Assert.Equal("c1", group.Members![0].ClientId);
     }
 
+    [Fact]
+    public async Task DescribeConsumerGroupAsync_EscapesGroupIdPathSegment()
+    {
+        Uri? captured = null;
+        var http = MockHttp(req =>
+        {
+            captured = req.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"id":"group/with?reserved#chars","state":"Empty","members":[]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        await using var admin = new AdminClient(http);
+
+        await admin.DescribeConsumerGroupAsync("group/with?reserved#chars");
+
+        Assert.NotNull(captured);
+        Assert.Equal(
+            "/v1/consumer-groups/group%2Fwith%3Freserved%23chars",
+            captured!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task GetConsumerGroupTopicLagAsync_EscapesGroupIdPathSegment()
+    {
+        Uri? captured = null;
+        var http = MockHttp(req =>
+        {
+            captured = req.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"group_id":"group/with?reserved#chars","partitions":[],"total_lag":0}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        await using var admin = new AdminClient(http);
+
+        await admin.GetConsumerGroupTopicLagAsync(
+            "group/with?reserved#chars",
+            "orders.v1");
+
+        Assert.NotNull(captured);
+        Assert.Equal(
+            "/v1/consumer-groups/group%2Fwith%3Freserved%23chars/lag/orders.v1",
+            captured!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task ConsumerGroupOperations_RejectWhitespaceGroupId()
+    {
+        var http = MockHttp(HttpStatusCode.OK, "{}");
+        await using var admin = new AdminClient(http);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => admin.GetConsumerGroupLagAsync(" "));
+    }
+
     // =========================================================================
     // Query
     // =========================================================================
@@ -295,7 +357,19 @@ public class AdminClientTests
     }
 
     // =========================================================================
-    // Dispose
+    // Dispose / HttpClient ownership
+    //
+    // AdminClient has two families of constructors:
+    //   - AdminClient(httpBaseUrl, ...)  -- creates its own HttpClient and must own
+    //     (dispose) it, since nothing else can hold a reference to it.
+    //   - AdminClient(httpClient)        -- receives a caller-supplied HttpClient (DI,
+    //     testing, or a shared IHttpClientFactory-managed client) and must NOT dispose
+    //     it, since the caller (or DI container) owns its lifetime.
+    //
+    // These tests exercise ownership purely through the public API: HttpClient throws
+    // ObjectDisposedException from SendAsync as soon as it is disposed, *before* any
+    // network I/O is attempted, so asserting on that exception is both a black-box and
+    // a hermetic way to prove disposal without reflection or a live connection.
     // =========================================================================
 
     [Fact]
@@ -303,6 +377,91 @@ public class AdminClientTests
     {
         var http = MockHttp(HttpStatusCode.OK, "[]");
         var admin = new AdminClient(http);
+        await admin.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_SelfCreatedHttpClient_ThreeArgConstructor_IsDisposed()
+    {
+        // AdminClient(httpBaseUrl, authToken, timeout) creates and must own its HttpClient.
+        var admin = new AdminClient(StreamlineTestEnvironment.UnitHttpBaseUrl, authToken: null, TimeSpan.FromSeconds(1));
+
+        await admin.DisposeAsync();
+
+        // A disposed HttpClient throws ObjectDisposedException synchronously from
+        // SendAsync before attempting any network I/O, so this assertion never
+        // touches the network even though UnitHttpBaseUrl cannot resolve.
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => admin.ListTopicsAsync());
+    }
+
+    [Fact]
+    public async Task DisposeAsync_SelfCreatedHttpClient_TwoArgConstructor_IsDisposed()
+    {
+        // AdminClient(httpBaseUrl, authToken) is the overload used by
+        // AddStreamlineAdmin(httpBaseUrl, authToken) and must also own its HttpClient.
+        var admin = new AdminClient(StreamlineTestEnvironment.UnitHttpBaseUrl, authToken: "token");
+
+        await admin.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => admin.ListTopicsAsync());
+    }
+
+    [Fact]
+    public async Task DisposeAsync_SelfCreatedHttpClient_SingleArgConstructor_IsDisposed()
+    {
+        // AdminClient(httpBaseUrl) with all defaults must also own its HttpClient.
+        var admin = new AdminClient(StreamlineTestEnvironment.UnitHttpBaseUrl);
+
+        await admin.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => admin.ListTopicsAsync());
+    }
+
+    [Fact]
+    public async Task DisposeAsync_InjectedHttpClient_IsNotDisposed()
+    {
+        // AdminClient(httpClient) must never dispose a caller-supplied HttpClient:
+        // the caller (DI container, IHttpClientFactory, or test) owns its lifetime.
+        var http = MockHttp(HttpStatusCode.OK, "[]");
+        var admin = new AdminClient(http);
+
+        await admin.DisposeAsync();
+
+        // If the injected client had been disposed, this would throw
+        // ObjectDisposedException instead of completing successfully.
+        var topics = await admin.ListTopicsAsync();
+        Assert.Empty(topics);
+
+        // The caller can keep using the same HttpClient instance directly too.
+        var response = await http.GetAsync(new Uri("/v1/topics", UriKind.Relative));
+        Assert.True(response.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_InjectedHttpClient_SharedAcrossMultipleAdminClients_NotDoubleDisposedOrLeaked()
+    {
+        // A single DI-managed HttpClient can legitimately back more than one
+        // AdminClient (e.g. re-resolved per scope). Disposing one AdminClient must
+        // not affect the shared client or a sibling AdminClient using it.
+        var http = MockHttp(HttpStatusCode.OK, "[]");
+        var first = new AdminClient(http);
+        var second = new AdminClient(http);
+
+        await first.DisposeAsync();
+
+        // The second AdminClient (and the underlying shared client) must remain usable.
+        Assert.Empty(await second.ListTopicsAsync());
+
+        await second.DisposeAsync();
+        Assert.Empty(await new AdminClient(http).ListTopicsAsync());
+    }
+
+    [Fact]
+    public async Task DisposeAsync_SelfCreatedHttpClient_CalledTwice_DoesNotThrow()
+    {
+        var admin = new AdminClient(StreamlineTestEnvironment.UnitHttpBaseUrl);
+
+        await admin.DisposeAsync();
         await admin.DisposeAsync();
     }
 
