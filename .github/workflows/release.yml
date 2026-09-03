@@ -1,11 +1,95 @@
 name: Release
+
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      conformance_image_digest:
+        description: >-
+          Immutable Streamline image reference pinned by content digest
+          (registry/repository@sha256:<64 lowercase hex characters>) to run live
+          conformance against before publishing. Overrides
+          release/CONFORMANCE_IMAGE_DIGEST for this run only. A floating tag
+          (including ":latest") or no value in either place hard-blocks publication;
+          there is no default image.
+        required: false
+        type: string
+
 permissions:
   contents: write
+
 jobs:
+  # Release blocker: tag publication may not proceed unless live conformance passed
+  # against an explicit, immutable Streamline image digest. There is no default image
+  # and no ":latest" fallback — see scripts/resolve-conformance-image.sh. A missing or
+  # invalid digest, or a conformance run that executed zero tests (for example because
+  # the filter matched nothing or every matched test was skipped), hard-blocks the
+  # `publish` job below via `needs: conformance`.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Resolve and validate the conformance image digest
+        id: resolve-image
+        shell: bash
+        env:
+          EXPLICIT_IMAGE: ${{ github.event.inputs.conformance_image_digest }}
+        run: |
+          set -euo pipefail
+          image="$(scripts/resolve-conformance-image.sh "${EXPLICIT_IMAGE:-}")"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+      - run: dotnet restore
+      - run: dotnet build --no-restore
+
+      - name: Start Streamline server (pinned to the validated digest)
+        env:
+          STREAMLINE_IMAGE: ${{ steps.resolve-image.outputs.image }}
+        run: docker compose -f docker-compose.test.yml up -d --wait
+
+      - name: Wait for health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9094/health > /dev/null 2>&1; then
+              echo "Streamline is healthy"
+              exit 0
+            fi
+            echo "Waiting for Streamline... ($i/30)"
+            sleep 2
+          done
+          echo "Streamline failed to start"
+          docker compose -f docker-compose.test.yml logs
+          exit 1
+
+      - name: Run live conformance tests
+        run: |
+          dotnet test tests/Streamline.Conformance --no-build --filter "Category=Conformance" \
+            --verbosity normal --logger "trx;LogFileName=release-conformance.trx" \
+            --results-directory ./conformance-results
+        env:
+          STREAMLINE_INTEGRATION: "1"
+          STREAMLINE_BOOTSTRAP_SERVERS: localhost:9092
+          STREAMLINE_HTTP_URL: http://localhost:9094
+          STREAMLINE_READY_TIMEOUT_SECONDS: "60"
+
+      - name: Guard against a zero-test/all-skipped conformance run
+        run: scripts/assert-executed-conformance-tests.sh ./conformance-results/release-conformance.trx
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs
+
+      - name: Stop Streamline server
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
   publish:
+    needs: conformance
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

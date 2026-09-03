@@ -58,6 +58,39 @@ public static class StreamlineTestEnvironment
     /// <summary>Environment variable bounding the readiness probe, in seconds.</summary>
     public const string ReadyTimeoutVariable = "STREAMLINE_READY_TIMEOUT_SECONDS";
 
+    /// <summary>Environment variable that opts into authentication conformance tests.</summary>
+    public const string AuthenticationVariable = "STREAMLINE_AUTH_CONFORMANCE";
+
+    /// <summary>Required authenticated Kafka-protocol endpoint.</summary>
+    public const string AuthenticationBootstrapVariable = "STREAMLINE_AUTH_BOOTSTRAP_SERVERS";
+
+    /// <summary>Required pre-created topic used by authentication conformance tests.</summary>
+    public const string AuthenticationTopicVariable = "STREAMLINE_AUTH_TOPIC";
+
+    /// <summary>Required authentication protocol: ssl, sasl-plaintext, or sasl-ssl.</summary>
+    public const string AuthenticationProtocolVariable = "STREAMLINE_AUTH_SECURITY_PROTOCOL";
+
+    /// <summary>SASL mechanism: plain, scram-sha-256, or scram-sha-512.</summary>
+    public const string AuthenticationMechanismVariable = "STREAMLINE_AUTH_SASL_MECHANISM";
+
+    /// <summary>SASL username for the real authentication fixture.</summary>
+    public const string AuthenticationUsernameVariable = "STREAMLINE_AUTH_USERNAME";
+
+    /// <summary>SASL password for the real authentication fixture.</summary>
+    public const string AuthenticationPasswordVariable = "STREAMLINE_AUTH_PASSWORD";
+
+    /// <summary>Known-invalid password used to verify authentication denial.</summary>
+    public const string AuthenticationInvalidPasswordVariable = "STREAMLINE_AUTH_INVALID_PASSWORD";
+
+    /// <summary>Optional CA certificate path for TLS fixtures.</summary>
+    public const string AuthenticationCaCertificateVariable = "STREAMLINE_AUTH_CA_CERTIFICATE_PATH";
+
+    /// <summary>Optional client certificate path for mutual TLS fixtures.</summary>
+    public const string AuthenticationClientCertificateVariable = "STREAMLINE_AUTH_CLIENT_CERTIFICATE_PATH";
+
+    /// <summary>Optional client key path for mutual TLS fixtures.</summary>
+    public const string AuthenticationClientKeyVariable = "STREAMLINE_AUTH_CLIENT_KEY_PATH";
+
     /// <summary>Default Kafka-protocol endpoint when no override is supplied.</summary>
     public const string DefaultBootstrapServers = "localhost:9092";
 
@@ -99,9 +132,23 @@ public static class StreamlineTestEnvironment
         BootstrapVariable + " / " + HttpUrlVariable + ") to run them.";
 
     /// <summary>
+    /// Reason reported when authentication conformance was not explicitly requested.
+    /// </summary>
+    public const string AuthenticationSkipReason =
+        "Authentication conformance requires a real secured broker fixture. Set " +
+        IntegrationVariable + "=1 and " + AuthenticationVariable +
+        "=1, then provide the STREAMLINE_AUTH_* fixture variables.";
+
+    /// <summary>
     /// Whether broker-dependent tests should execute, based on <see cref="IntegrationVariable"/>.
     /// </summary>
     public static bool IsIntegrationEnabled => IsTruthy(Environment.GetEnvironmentVariable(IntegrationVariable));
+
+    /// <summary>
+    /// Whether authentication conformance was explicitly requested.
+    /// </summary>
+    public static bool IsAuthenticationEnabled =>
+        IsTruthy(Environment.GetEnvironmentVariable(AuthenticationVariable));
 
     /// <summary>
     /// The Kafka-protocol endpoint integration tests should connect to.

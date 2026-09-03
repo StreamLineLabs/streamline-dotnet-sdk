@@ -209,4 +209,112 @@ public class TestSelectionTests
                 : StreamlineTestEnvironment.DefaultImage,
             image);
     }
+
+    [Fact]
+    public void AuthenticationFixture_RequiresExplicitEndpointAndTopic()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            [StreamlineTestEnvironment.AuthenticationProtocolVariable] = "sasl-ssl",
+            [StreamlineTestEnvironment.AuthenticationMechanismVariable] = "plain",
+            [StreamlineTestEnvironment.AuthenticationUsernameVariable] = "user",
+            [StreamlineTestEnvironment.AuthenticationPasswordVariable] = "password",
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => AuthenticationFixtureConfiguration.Load(
+                name => values.GetValueOrDefault(name)));
+
+        Assert.Contains(
+            StreamlineTestEnvironment.AuthenticationBootstrapVariable,
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuthenticationFixture_ParsesCompleteSaslConfiguration()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            [StreamlineTestEnvironment.AuthenticationBootstrapVariable] = "secure-broker.example:9093",
+            [StreamlineTestEnvironment.AuthenticationTopicVariable] = "conformance-auth",
+            [StreamlineTestEnvironment.AuthenticationProtocolVariable] = "sasl-ssl",
+            [StreamlineTestEnvironment.AuthenticationMechanismVariable] = "scram-sha-256",
+            [StreamlineTestEnvironment.AuthenticationUsernameVariable] = "user",
+            [StreamlineTestEnvironment.AuthenticationPasswordVariable] = "password",
+            [StreamlineTestEnvironment.AuthenticationInvalidPasswordVariable] = "wrong-password",
+        };
+
+        var configuration = AuthenticationFixtureConfiguration.Load(
+            name => values.GetValueOrDefault(name));
+
+        Assert.Equal("secure-broker.example:9093", configuration.BootstrapServers);
+        Assert.Equal("conformance-auth", configuration.Topic);
+        Assert.Equal(AuthenticationProtocol.SaslSsl, configuration.Protocol);
+        Assert.Equal(AuthenticationMechanism.ScramSha256, configuration.Mechanism);
+        Assert.True(configuration.UsesTls);
+        Assert.True(configuration.UsesSasl);
+        Assert.False(configuration.UsesMutualTls);
+    }
+
+    [Fact]
+    public void AuthenticationFixture_RejectsInvalidFailClosedConfiguration()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            [StreamlineTestEnvironment.AuthenticationBootstrapVariable] = "secure-broker.example:9093",
+            [StreamlineTestEnvironment.AuthenticationTopicVariable] = "conformance-auth",
+            [StreamlineTestEnvironment.AuthenticationProtocolVariable] = "sasl-ssl",
+            [StreamlineTestEnvironment.AuthenticationMechanismVariable] = "plain",
+            [StreamlineTestEnvironment.AuthenticationUsernameVariable] = "user",
+            [StreamlineTestEnvironment.AuthenticationPasswordVariable] = "same-password",
+            [StreamlineTestEnvironment.AuthenticationInvalidPasswordVariable] = "same-password",
+        };
+
+        Assert.Throws<InvalidOperationException>(
+            () => AuthenticationFixtureConfiguration.Load(
+                name => values.GetValueOrDefault(name)));
+    }
+
+    [Fact]
+    public void AuthenticationFact_SkipsUnlessRealFixtureWasRequested()
+    {
+        var attribute = new AuthenticationFactAttribute();
+
+        if (StreamlineTestEnvironment.IsIntegrationEnabled &&
+            StreamlineTestEnvironment.IsAuthenticationEnabled)
+        {
+            Assert.Null(attribute.Skip);
+        }
+        else
+        {
+            Assert.NotNull(attribute.Skip);
+        }
+    }
+
+    /// <summary>
+    /// Mirrors <see cref="Fixture_DoesNotProbeWhenIntegrationIsDisabled"/> for the
+    /// authentication fixture: disabled means no probe and no silently-defaulted
+    /// configuration. <see cref="AuthenticationServerFixture.Configuration"/> must
+    /// still throw rather than expose a null/placeholder fixture, so a caller can
+    /// never accidentally authorize a conformance assertion against nothing.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticationServerFixture_DoesNotProbeWhenDisabled()
+    {
+        if (StreamlineTestEnvironment.IsIntegrationEnabled &&
+            StreamlineTestEnvironment.IsAuthenticationEnabled)
+            return;
+
+        var fixture = new AuthenticationServerFixture();
+
+        Assert.False(fixture.Enabled);
+
+        // Completes immediately: no configuration is loaded and no socket is opened.
+        await fixture.InitializeAsync();
+
+        Assert.Throws<InvalidOperationException>(() => fixture.Configuration);
+
+        await fixture.DisposeAsync();
+    }
 }

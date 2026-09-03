@@ -11,3 +11,12 @@ namespace Streamline.Conformance;
 public sealed class IntegrationTestCollection : ICollectionFixture<IntegrationServerFixture>
 {
 }
+
+/// <summary>
+/// Binds the fail-closed secured broker fixture to authentication conformance tests.
+/// </summary>
+[CollectionDefinition(AuthenticationIntegrationCollection.Name)]
+public sealed class AuthenticationIntegrationTestCollection :
+    ICollectionFixture<AuthenticationServerFixture>
+{
+}

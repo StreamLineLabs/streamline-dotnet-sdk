@@ -3,7 +3,7 @@
 # The image is configurable so the stack can be pinned to whatever Streamline build
 # is actually available to you — there is no hard-coded tag to go stale:
 #
-#   STREAMLINE_IMAGE=ghcr.io/streamlinelabs/streamline:0.3.0 \
+#   STREAMLINE_IMAGE=ghcr.io/streamlinelabs/streamline:TESTED_TAG \
 #     docker compose -f docker-compose.test.yml up -d --wait
 #
 # Ports are configurable too, so the stack can run alongside a local server:

@@ -74,3 +74,86 @@ public sealed class IntegrationTraitDiscoverer : ITraitDiscoverer
         yield return new KeyValuePair<string, string>(TestCategories.TraitName, TestCategories.Integration);
     }
 }
+
+/// <summary>
+/// Authentication capability required by a conformance test.
+/// </summary>
+public enum AuthenticationRequirement
+{
+    /// <summary>Any valid secured broker fixture.</summary>
+    Any,
+
+    /// <summary>A fixture using TLS.</summary>
+    Tls,
+
+    /// <summary>A fixture using mutual TLS.</summary>
+    MutualTls,
+
+    /// <summary>A fixture using any SASL mechanism.</summary>
+    Sasl,
+
+    /// <summary>A fixture using SASL PLAIN.</summary>
+    SaslPlain,
+
+    /// <summary>A fixture using SCRAM-SHA-256.</summary>
+    ScramSha256,
+
+    /// <summary>A fixture using SCRAM-SHA-512.</summary>
+    ScramSha512,
+}
+
+/// <summary>
+/// Marks a conformance test as requiring an explicitly configured secured broker.
+/// </summary>
+/// <remarks>
+/// Missing opt-in skips explicitly. Once opted in, invalid fixture configuration is
+/// not skipped: <see cref="AuthenticationServerFixture"/> fails the run.
+/// </remarks>
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+[TraitDiscoverer("Streamline.TestSupport.IntegrationTraitDiscoverer", "Streamline.TestSupport")]
+public sealed class AuthenticationFactAttribute : FactAttribute, ITraitAttribute
+{
+    /// <summary>Creates an authentication fixture fact.</summary>
+    /// <param name="requirement">Capability required from the configured fixture.</param>
+    public AuthenticationFactAttribute(AuthenticationRequirement requirement = AuthenticationRequirement.Any)
+    {
+        if (!StreamlineTestEnvironment.IsIntegrationEnabled)
+        {
+            Skip = StreamlineTestEnvironment.SkipReason;
+            return;
+        }
+
+        if (!StreamlineTestEnvironment.IsAuthenticationEnabled)
+        {
+            Skip = StreamlineTestEnvironment.AuthenticationSkipReason;
+            return;
+        }
+
+        if (AuthenticationFixtureConfiguration.TryLoad(out var configuration) &&
+            configuration is not null &&
+            !Matches(configuration, requirement))
+        {
+            Skip = $"The configured authentication fixture does not provide {requirement}.";
+        }
+    }
+
+    private static bool Matches(
+        AuthenticationFixtureConfiguration configuration,
+        AuthenticationRequirement requirement)
+    {
+        return requirement switch
+        {
+            AuthenticationRequirement.Any => true,
+            AuthenticationRequirement.Tls => configuration.UsesTls,
+            AuthenticationRequirement.MutualTls => configuration.UsesMutualTls,
+            AuthenticationRequirement.Sasl => configuration.UsesSasl,
+            AuthenticationRequirement.SaslPlain =>
+                configuration.Mechanism is AuthenticationMechanism.Plain,
+            AuthenticationRequirement.ScramSha256 =>
+                configuration.Mechanism is AuthenticationMechanism.ScramSha256,
+            AuthenticationRequirement.ScramSha512 =>
+                configuration.Mechanism is AuthenticationMechanism.ScramSha512,
+            _ => false,
+        };
+    }
+}
