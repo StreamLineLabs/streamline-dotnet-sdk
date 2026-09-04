@@ -36,7 +36,7 @@ namespace Streamline.TestContainers;
 /// With configuration:
 /// <code>
 /// await using var container = new StreamlineBuilder()
-///     .WithImage("ghcr.io/streamlinelabs/streamline:0.2.0")
+///     .WithImage("ghcr.io/streamlinelabs/streamline:your-tested-tag")
 ///     .WithDebugLogging()
 ///     .WithPlayground()
 ///     .Build();
@@ -85,7 +85,7 @@ public sealed class StreamlineBuilder : ContainerBuilder<StreamlineBuilder, Stre
     /// <summary>
     /// Sets the Docker image tag to use for the Streamline container.
     /// </summary>
-    /// <param name="tag">The image tag (e.g., "0.2.0", "latest").</param>
+    /// <param name="tag">The image tag (e.g., a release tag qualified by your tests, or "latest").</param>
     /// <returns>A configured <see cref="StreamlineBuilder"/>.</returns>
     public StreamlineBuilder WithTag(string tag)
     {

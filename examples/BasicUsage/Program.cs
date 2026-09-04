@@ -4,7 +4,7 @@
 //   streamline --playground
 //
 // Run with:
-//   dotnet run --project examples/BasicUsage.csproj
+//   dotnet run --project examples/BasicUsage
 
 using Streamline.Client;
 

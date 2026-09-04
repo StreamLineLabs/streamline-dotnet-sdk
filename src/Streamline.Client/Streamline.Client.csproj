@@ -8,7 +8,6 @@
 
     <!-- Package metadata -->
     <PackageId>Streamline.Client</PackageId>
-    <Version>0.3.0</Version>
     <Authors>Streamline Team</Authors>
     <Company>Streamline</Company>
     <Description>Native .NET client for Streamline streaming platform</Description>
@@ -17,6 +16,7 @@
     <PackageProjectUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</PackageProjectUrl>
     <RepositoryUrl>https://github.com/streamlinelabs/streamline-dotnet-sdk</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Build settings -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -28,6 +28,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Streamline.Client.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="\" Link="README.md" />
   </ItemGroup>
 
   <ItemGroup>

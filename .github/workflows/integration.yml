@@ -8,21 +8,20 @@ on:
   schedule:
     - cron: '0 4 * * 1' # Weekly Monday 4am UTC
   workflow_dispatch:
+    inputs:
+      image:
+        description: Streamline server image to test against
+        required: false
+        type: string
+
+# The Streamline server image is configurable rather than hard-coded, so the job can be
+# pointed at whatever build is published.
+env:
+  STREAMLINE_IMAGE: ${{ inputs.image || vars.STREAMLINE_IMAGE || 'ghcr.io/streamlinelabs/streamline:latest' }}
 
 jobs:
   integration:
     runs-on: ubuntu-latest
-    services:
-      streamline:
-        image: ghcr.io/streamlinelabs/streamline:latest
-        ports:
-          - 9092:9092
-          - 9094:9094
-        options: >-
-          --health-cmd "curl -f http://localhost:9094/health || exit 1"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -30,15 +29,24 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet restore
       - run: dotnet build --no-restore --configuration Release
-      - name: Wait for Streamline
-        run: |
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:9094/health && break
-            echo "Waiting for Streamline... ($i/30)"
-            sleep 2
-          done
+
+      - name: Start Streamline server
+        run: docker compose -f docker-compose.test.yml up -d --wait
+
+      # The test fixture performs its own bounded readiness probe and fails the run if
+      # the server is unreachable, so no silent-skip fallback is needed here.
       - name: Run integration tests
-        run: dotnet test --no-build --configuration Release --filter "Category=Integration|FullyQualifiedName~Integration" --verbosity normal
+        run: dotnet test --no-build --configuration Release --filter "Category=Integration" --verbosity normal
         env:
+          STREAMLINE_INTEGRATION: "1"
           STREAMLINE_BOOTSTRAP_SERVERS: localhost:9092
           STREAMLINE_HTTP_URL: http://localhost:9094
+          STREAMLINE_READY_TIMEOUT_SECONDS: "60"
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs
+
+      - name: Stop Streamline server
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v

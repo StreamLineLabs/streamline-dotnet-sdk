@@ -1,0 +1,18 @@
+# Pin the exact Streamline server image that must pass live conformance before this
+# commit's tag is allowed to publish.
+#
+# The release workflow (.github/workflows/release.yml) reads the first non-comment,
+# non-blank line of this file with scripts/resolve-conformance-image.sh and hard-blocks
+# publication unless it is a pure content-digest reference:
+#
+#   registry/repository@sha256:<64 lowercase hex characters>
+#
+# A floating tag (including ":latest", and including "tag@sha256:..." combinations) is
+# rejected. There is no default: an empty/placeholder value (as committed here) fails
+# closed rather than silently allowing publication against an unverified image.
+#
+# Replace the line below with the digest that was actually built and validated for
+# this release commit before tagging, e.g.:
+#   ghcr.io/streamlinelabs/streamline@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd
+#
+# (No value is pinned yet — this intentionally blocks release publication.)

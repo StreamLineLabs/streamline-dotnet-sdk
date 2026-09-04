@@ -1,15 +1,26 @@
-using Streamline.Client;
+using Streamline.TestSupport;
 using Xunit;
 
 namespace Streamline.Client.Tests;
 
+/// <summary>
+/// Hermetic consumer tests. Subscription is what materialises the librdkafka handle,
+/// so every test here stops short of subscribing and never contacts a broker.
+/// </summary>
 public class ConsumerTests
 {
-    private IConsumer<string, string> CreateConsumer(
+    private static StreamlineOptions UnitOptions() => new()
+    {
+        BootstrapServers = StreamlineTestEnvironment.UnitBootstrapServers,
+        ConnectTimeout = TimeSpan.FromMilliseconds(100),
+        RequestTimeout = TimeSpan.FromMilliseconds(100),
+    };
+
+    private static IConsumer<string, string> CreateConsumer(
         string topic = "test-topic",
         ConsumerOptions? options = null)
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         return options != null
             ? client.CreateConsumer<string, string>(topic, options)
             : client.CreateConsumer<string, string>(topic, "test-group");
@@ -44,7 +55,7 @@ public class ConsumerTests
     [Fact]
     public void CreateConsumer_WithDifferentTypeParameters_ReturnsConsumer()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         var consumer = client.CreateConsumer<int, byte[]>("test-topic", "test-group");
         Assert.NotNull(consumer);
     }
@@ -52,7 +63,7 @@ public class ConsumerTests
     [Fact]
     public async Task CreateConsumer_AfterClientDisposed_ThrowsObjectDisposedException()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         await client.DisposeAsync();
 
         Assert.Throws<ObjectDisposedException>(
@@ -60,21 +71,6 @@ public class ConsumerTests
     }
 
     // --- SubscribeAsync ---
-
-    [Fact]
-    public async Task SubscribeAsync_CompletesSuccessfully()
-    {
-        var consumer = CreateConsumer();
-        await consumer.SubscribeAsync();
-    }
-
-    [Fact]
-    public async Task SubscribeAsync_CalledTwice_IsIdempotent()
-    {
-        var consumer = CreateConsumer();
-        await consumer.SubscribeAsync();
-        await consumer.SubscribeAsync();
-    }
 
     [Fact]
     public async Task SubscribeAsync_AfterDispose_ThrowsObjectDisposedException()
@@ -86,18 +82,6 @@ public class ConsumerTests
     }
 
     // --- PollAsync ---
-
-    [Fact]
-    public async Task PollAsync_WhenSubscribed_ReturnsEmptyList()
-    {
-        var consumer = CreateConsumer();
-        await consumer.SubscribeAsync();
-
-        var records = await consumer.PollAsync(TimeSpan.FromMilliseconds(10));
-
-        Assert.NotNull(records);
-        Assert.Empty(records);
-    }
 
     [Fact]
     public async Task PollAsync_WhenNotSubscribed_ThrowsInvalidOperationException()
@@ -119,13 +103,11 @@ public class ConsumerTests
     }
 
     [Fact]
-    public async Task PollAsync_WithCancellationToken_CanBeCancelled()
+    public async Task PollAsync_WithCancelledToken_ThrowsBeforeContactingBroker()
     {
         var consumer = CreateConsumer();
-        await consumer.SubscribeAsync();
-
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => consumer.PollAsync(TimeSpan.FromSeconds(10), cts.Token));
@@ -148,26 +130,6 @@ public class ConsumerTests
     }
 
     [Fact]
-    public async Task ConsumeAsync_WhenCancelled_StopsEnumeration()
-    {
-        var consumer = CreateConsumer();
-        await consumer.SubscribeAsync();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
-        var count = 0;
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-        {
-            await foreach (var _ in consumer.ConsumeAsync(cts.Token))
-            {
-                count++;
-            }
-        });
-
-        Assert.Equal(0, count);
-    }
-
-    [Fact]
     public async Task ConsumeAsync_AfterDispose_ThrowsObjectDisposedException()
     {
         var consumer = CreateConsumer();
@@ -182,14 +144,7 @@ public class ConsumerTests
         });
     }
 
-    // --- CommitAsync ---
-
-    [Fact]
-    public async Task CommitAsync_CompletesSuccessfully()
-    {
-        var consumer = CreateConsumer();
-        await consumer.CommitAsync();
-    }
+    // --- CommitAsync / Seek ---
 
     [Fact]
     public async Task CommitAsync_AfterDispose_ThrowsObjectDisposedException()
@@ -198,15 +153,6 @@ public class ConsumerTests
         await consumer.DisposeAsync();
 
         await Assert.ThrowsAsync<ObjectDisposedException>(() => consumer.CommitAsync());
-    }
-
-    // --- SeekToBeginningAsync ---
-
-    [Fact]
-    public async Task SeekToBeginningAsync_CompletesSuccessfully()
-    {
-        var consumer = CreateConsumer();
-        await consumer.SeekToBeginningAsync();
     }
 
     [Fact]
@@ -218,15 +164,6 @@ public class ConsumerTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => consumer.SeekToBeginningAsync());
     }
 
-    // --- SeekToEndAsync ---
-
-    [Fact]
-    public async Task SeekToEndAsync_CompletesSuccessfully()
-    {
-        var consumer = CreateConsumer();
-        await consumer.SeekToEndAsync();
-    }
-
     [Fact]
     public async Task SeekToEndAsync_AfterDispose_ThrowsObjectDisposedException()
     {
@@ -234,15 +171,6 @@ public class ConsumerTests
         await consumer.DisposeAsync();
 
         await Assert.ThrowsAsync<ObjectDisposedException>(() => consumer.SeekToEndAsync());
-    }
-
-    // --- SeekAsync ---
-
-    [Fact]
-    public async Task SeekAsync_CompletesSuccessfully()
-    {
-        var consumer = CreateConsumer();
-        await consumer.SeekAsync(partition: 0, offset: 42);
     }
 
     [Fact]
@@ -253,6 +181,15 @@ public class ConsumerTests
 
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => consumer.SeekAsync(partition: 0, offset: 42));
+    }
+
+    [Fact]
+    public async Task SeekAsync_WithOffsetBelowEarliestSentinel_ThrowsArgumentOutOfRange()
+    {
+        var consumer = CreateConsumer();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => consumer.SeekAsync(partition: 0, offset: -3));
     }
 
     // --- DisposeAsync ---
@@ -311,5 +248,99 @@ public class ConsumerTests
 
         Assert.Null(record.Key);
         Assert.Equal("value", record.Value);
+    }
+}
+
+/// <summary>
+/// Consumer tests that require a live broker to accept subscriptions, polls and commits.
+/// </summary>
+[Collection(IntegrationCollection.Name)]
+public class ConsumerIntegrationTests
+{
+    private readonly IntegrationServerFixture _server;
+
+    /// <summary>Creates the test class with the shared integration fixture.</summary>
+    /// <param name="server">Fixture describing the configured Streamline endpoints.</param>
+    public ConsumerIntegrationTests(IntegrationServerFixture server)
+    {
+        _server = server;
+    }
+
+    private IConsumer<string, string> CreateConsumer()
+    {
+        var client = new StreamlineClient(new StreamlineOptions
+        {
+            BootstrapServers = _server.BootstrapServers,
+            Admin = new AdminOptions { HttpBaseUrl = _server.HttpBaseUrl },
+        });
+        return client.CreateConsumer<string, string>("test-topic", $"test-group-{Guid.NewGuid():N}");
+    }
+
+    [IntegrationFact]
+    public async Task SubscribeAsync_CompletesSuccessfully()
+    {
+        await using var consumer = CreateConsumer();
+        await consumer.SubscribeAsync();
+    }
+
+    [IntegrationFact]
+    public async Task SubscribeAsync_CalledTwice_IsIdempotent()
+    {
+        await using var consumer = CreateConsumer();
+        await consumer.SubscribeAsync();
+        await consumer.SubscribeAsync();
+    }
+
+    [IntegrationFact]
+    public async Task PollAsync_WhenSubscribed_ReturnsList()
+    {
+        await using var consumer = CreateConsumer();
+        await consumer.SubscribeAsync();
+
+        var records = await consumer.PollAsync(TimeSpan.FromMilliseconds(500));
+
+        Assert.NotNull(records);
+    }
+
+    [IntegrationFact]
+    public async Task ConsumeAsync_WhenCancelled_StopsEnumeration()
+    {
+        await using var consumer = CreateConsumer();
+        await consumer.SubscribeAsync();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in consumer.ConsumeAsync(cts.Token))
+            {
+                // Drain until cancellation fires.
+            }
+        });
+    }
+
+    [IntegrationFact]
+    public async Task CommitAsync_AfterPoll_CompletesSuccessfully()
+    {
+        await using var consumer = CreateConsumer();
+        await consumer.SubscribeAsync();
+        await consumer.PollAsync(TimeSpan.FromMilliseconds(500));
+        await consumer.CommitAsync();
+    }
+
+    [IntegrationFact]
+    public async Task SeekToBeginningAsync_CompletesSuccessfully()
+    {
+        await using var consumer = CreateConsumer();
+        await consumer.SubscribeAsync();
+        await consumer.SeekToBeginningAsync();
+    }
+
+    [IntegrationFact]
+    public async Task SeekToEndAsync_CompletesSuccessfully()
+    {
+        await using var consumer = CreateConsumer();
+        await consumer.SubscribeAsync();
+        await consumer.SeekToEndAsync();
     }
 }

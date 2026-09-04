@@ -20,12 +20,14 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<StreamlineOptions> configure)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
         services.Configure(configure);
 
         services.AddSingleton<IStreamlineClient>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<StreamlineOptions>>().Value;
-            var logger = sp.GetRequiredService<ILogger<StreamlineClient>>();
+            var logger = sp.GetService<ILogger<StreamlineClient>>();
             return new StreamlineClient(options, logger);
         });
 
@@ -42,6 +44,8 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         string bootstrapServers)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(bootstrapServers);
         return services.AddStreamline(options =>
         {
             options.BootstrapServers = bootstrapServers;
@@ -52,25 +56,24 @@ public static class ServiceCollectionExtensions
     /// Adds the Streamline admin client to the service collection.
     /// Uses the <see cref="AdminOptions"/> from the configured <see cref="StreamlineOptions"/>.
     /// </summary>
+    /// <remarks>
+    /// The <see cref="AdminClient"/> is constructed via the base-URL constructor so it
+    /// creates and owns its own <see cref="HttpClient"/>. That client is not registered
+    /// with DI or an <c>IHttpClientFactory</c>, so nothing else can hold a
+    /// reference to it; <see cref="AdminClient"/> disposing it when the container
+    /// disposes the singleton is what prevents the handle (and its socket/connection
+    /// pool) from leaking for the lifetime of the process.
+    /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddStreamlineAdmin(
         this IServiceCollection services)
     {
+        ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IAdminClient>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<StreamlineOptions>>().Value;
-            var httpClient = new HttpClient
-            {
-                BaseAddress = new Uri(options.Admin.HttpBaseUrl),
-                Timeout = options.Admin.Timeout,
-            };
-            if (options.Admin.AuthToken is not null)
-            {
-                httpClient.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.Admin.AuthToken);
-            }
-            return new AdminClient(httpClient);
+            return new AdminClient(options.Admin.HttpBaseUrl, options.Admin.AuthToken, options.Admin.Timeout);
         });
 
         return services;
@@ -79,6 +82,11 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Adds the Streamline admin client with explicit configuration.
     /// </summary>
+    /// <remarks>
+    /// Uses the <see cref="AdminClient(string, string?)"/> constructor, which creates
+    /// and owns its own <see cref="HttpClient"/>; that client is disposed along with
+    /// the <see cref="AdminClient"/> singleton when the container is disposed.
+    /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="httpBaseUrl">Base URL of the HTTP API (e.g., "http://localhost:9094").</param>
     /// <param name="authToken">Optional bearer token.</param>
@@ -88,10 +96,9 @@ public static class ServiceCollectionExtensions
         string httpBaseUrl,
         string? authToken = null)
     {
-        services.AddSingleton<IAdminClient>(sp =>
-        {
-            return new AdminClient(httpBaseUrl, authToken);
-        });
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(httpBaseUrl);
+        services.AddSingleton<IAdminClient>(_ => new AdminClient(httpBaseUrl, authToken));
 
         return services;
     }
@@ -106,6 +113,8 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<SchemaRegistryOptions> configure)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
         services.Configure(configure);
 
         services.AddSingleton<ISchemaRegistryClient>(sp =>
@@ -128,6 +137,8 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         string baseUrl)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseUrl);
         return services.AddStreamlineSchemaRegistry(options =>
         {
             options.BaseUrl = baseUrl;
@@ -142,6 +153,7 @@ public static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddStreamlineHealthChecks(this IServiceCollection services)
     {
+        ArgumentNullException.ThrowIfNull(services);
         services.AddHealthChecks()
             .AddCheck<StreamlineHealthCheck>("streamline");
         return services;

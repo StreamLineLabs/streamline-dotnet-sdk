@@ -126,7 +126,7 @@ public sealed class SchemaRegistryClient : ISchemaRegistryClient
 
         var response = await SendAsync(
             HttpMethod.Post,
-            $"/api/schemas/subjects/{Uri.EscapeDataString(subject)}/versions",
+            $"/api/schemas/subjects/{UrlPathSegment.Escape(subject, nameof(subject))}/versions",
             cancellationToken,
             requestBody);
 
@@ -158,7 +158,7 @@ public sealed class SchemaRegistryClient : ISchemaRegistryClient
 
         var response = await SendAsync(
             HttpMethod.Get,
-            $"/api/schemas/subjects/{Uri.EscapeDataString(subject)}/versions/{version}",
+            $"/api/schemas/subjects/{UrlPathSegment.Escape(subject, nameof(subject))}/versions/{version}",
             cancellationToken);
 
         var schemaInfo = await DeserializeAsync<SchemaInfo>(response, cancellationToken)
@@ -182,7 +182,7 @@ public sealed class SchemaRegistryClient : ISchemaRegistryClient
 
         var response = await SendAsync(
             HttpMethod.Get,
-            $"/api/schemas/subjects/{Uri.EscapeDataString(subject)}/versions/latest",
+            $"/api/schemas/subjects/{UrlPathSegment.Escape(subject, nameof(subject))}/versions/latest",
             cancellationToken);
 
         var schemaInfo = await DeserializeAsync<SchemaInfo>(response, cancellationToken)
@@ -254,7 +254,7 @@ public sealed class SchemaRegistryClient : ISchemaRegistryClient
 
         await SendAsync(
             HttpMethod.Delete,
-            $"/api/schemas/subjects/{Uri.EscapeDataString(subject)}",
+            $"/api/schemas/subjects/{UrlPathSegment.Escape(subject, nameof(subject))}",
             cancellationToken);
 
         // Evict all cached entries for this subject
@@ -292,7 +292,7 @@ public sealed class SchemaRegistryClient : ISchemaRegistryClient
 
         var response = await SendAsync(
             HttpMethod.Post,
-            $"/api/schemas/compatibility/subjects/{Uri.EscapeDataString(subject)}/versions/latest",
+            $"/api/schemas/compatibility/subjects/{UrlPathSegment.Escape(subject, nameof(subject))}/versions/latest",
             cancellationToken,
             requestBody);
 
@@ -315,7 +315,7 @@ public sealed class SchemaRegistryClient : ISchemaRegistryClient
 
         var response = await SendAsync(
             HttpMethod.Get,
-            $"/api/schemas/config/{Uri.EscapeDataString(subject)}",
+            $"/api/schemas/config/{UrlPathSegment.Escape(subject, nameof(subject))}",
             cancellationToken);
 
         var result = await DeserializeAsync<JsonElement>(response, cancellationToken);
@@ -349,7 +349,7 @@ public sealed class SchemaRegistryClient : ISchemaRegistryClient
 
         await SendAsync(
             HttpMethod.Put,
-            $"/api/schemas/config/{Uri.EscapeDataString(subject)}",
+            $"/api/schemas/config/{UrlPathSegment.Escape(subject, nameof(subject))}",
             cancellationToken,
             requestBody);
     }

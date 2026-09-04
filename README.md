@@ -3,7 +3,7 @@
 [![CI](https://github.com/streamlinelabs/streamline-dotnet-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/streamlinelabs/streamline-dotnet-sdk/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/streamlinelabs/streamline-dotnet-sdk?style=flat-square)](https://codecov.io/gh/streamlinelabs/streamline-dotnet-sdk)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-8%2B-purple.svg)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-net8.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Docs](https://img.shields.io/badge/docs-streamlinelabs.dev-blue.svg)](https://streamlinelabs.dev/docs/sdks/dotnet)
 [![NuGet](https://img.shields.io/nuget/v/Streamline.Client.svg)](https://www.nuget.org/packages/Streamline.Client)
 
@@ -33,23 +33,18 @@ Console.WriteLine($"Produced to partition {metadata.Partition} at offset {metada
 ### Transactions
 
 ```csharp
-using var producer = client.CreateProducer<string, string>();
-await producer.BeginTransactionAsync();
-try
-{
-    await producer.SendAsync("orders", "k1", "v1");
-    await producer.SendAsync("orders", "k2", "v2");
-    await producer.CommitTransactionAsync();
-}
-catch
-{
-    await producer.AbortTransactionAsync();
-    throw;
-}
+await using var producer = client.CreateTransactionalProducer<string, string>();
+producer.BeginTransaction();
+var first = producer.SendTransactionalAsync("orders", "k1", "v1");
+var second = producer.SendTransactionalAsync("orders", "k2", "v2");
+await producer.CommitTransactionAsync();
+await Task.WhenAll(first, second);
 ```
 
-> **Note:** Transactions use client-side buffering. Messages are collected and sent as a batch
-> on commit, providing all-or-nothing delivery at the client level.
+> **Important:** These are client-buffered transactions, not broker transactions.
+> Commit sends buffered records in order, but a failure can occur after earlier records
+> were delivered. Call `AbortTransaction()` before commit to discard buffered records;
+> once commit starts, a failed commit has already ended the transaction.
 
 ### Consumer
 
@@ -70,6 +65,8 @@ await foreach (var record in consumer.ConsumeAsync())
 ### With Dependency Injection
 
 ```csharp
+using System.Text.Json;
+
 // In Program.cs or Startup.cs
 services.AddStreamline(options =>
 {
@@ -90,7 +87,7 @@ public class EventService
 
     public async Task PublishEventAsync(string topic, Event evt)
     {
-        await _client.ProduceAsync(topic, evt.Id, evt);
+        await _client.ProduceAsync(topic, evt.Id, JsonSerializer.Serialize(evt));
     }
 }
 ```
@@ -212,8 +209,12 @@ var consumer = client.CreateConsumer<string, string>("my-topic", consumerOptions
 
 ## Requirements
 
-- .NET 8.0 or later
-- Streamline server 0.2.0 or later
+- A runtime/application capable of consuming the SDK's `net8.0` target. CI validates
+  the package with the .NET 8 SDK.
+- A Streamline deployment exposing the Kafka-compatible endpoint and the HTTP APIs
+  used by the selected SDK features. Server compatibility is qualified by running the
+  opt-in conformance suite against a pinned image or endpoint; the SDK does not claim
+  blanket compatibility with every Streamline release.
 
 ## Testing
 
@@ -267,17 +268,53 @@ See the [testcontainers README](./testcontainers/README.md) for full documentati
 
 ### Manual Integration Tests
 
-Start a local Streamline server:
+The default test run is **hermetic**: `dotnet test` never contacts a broker, an HTTP
+endpoint, or `localhost`, and it completes in seconds. Broker-dependent tests are tagged
+`Category=Integration` and skipped unless you opt in.
 
 ```bash
-docker compose -f docker-compose.test.yml up -d
+dotnet restore
+dotnet build --no-restore
+dotnet test --no-build            # hermetic; no server needed
 ```
 
-Run tests:
+To run the broker-dependent tests, start a server and set `STREAMLINE_INTEGRATION=1`:
 
 ```bash
-dotnet test
+# The image is configurable — pin it to a build you can actually pull.
+STREAMLINE_IMAGE=ghcr.io/streamlinelabs/streamline:TESTED_TAG \
+  docker compose -f docker-compose.test.yml up -d --wait
+
+STREAMLINE_INTEGRATION=1 dotnet test --filter "Category=Integration"
+
+docker compose -f docker-compose.test.yml down -v
 ```
+
+Or use the Make targets, which wire the same variables together:
+
+```bash
+make test              # hermetic suite
+make integration-up    # start the server
+make integration-test  # opt-in broker tests
+make conformance-test  # opt-in conformance suite
+make integration-down  # stop the server
+make test-all          # up + integration-test + down
+```
+
+When `STREAMLINE_INTEGRATION` is enabled but the endpoints are unreachable, the suite
+**fails fast** with an actionable message instead of retrying `localhost` — it never
+reports a false pass against a missing server.
+
+#### Test environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `STREAMLINE_INTEGRATION` | *(unset)* | Set to `1`/`true`/`yes`/`on` to run broker-dependent tests |
+| `STREAMLINE_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka-protocol endpoint (alias: `STREAMLINE_BOOTSTRAP`) |
+| `STREAMLINE_HTTP_URL` | `http://localhost:9094` | HTTP management endpoint (alias: `STREAMLINE_HTTP`) |
+| `STREAMLINE_IMAGE` | `ghcr.io/streamlinelabs/streamline:latest` | Server image used by `docker-compose.test.yml` |
+| `STREAMLINE_KAFKA_PORT` / `STREAMLINE_HTTP_PORT` | `9092` / `9094` | Host ports published by the compose stack |
+| `STREAMLINE_READY_TIMEOUT_SECONDS` | `20` | Bound on the readiness probe (clamped to 1–300) |
 
 ## API Reference
 
@@ -441,13 +478,14 @@ The [`examples/`](examples/) directory contains runnable examples:
 
 | Example | Description |
 |---------|-------------|
-| [BasicUsage.cs](examples/BasicUsage.cs) | Produce, consume, and admin operations |
+| [BasicUsage](examples/BasicUsage/Program.cs) | Produce, consume, and admin operations |
 | [QueryUsage](examples/QueryUsage/Program.cs) | SQL analytics with the embedded query engine |
 | [SchemaRegistryUsage](examples/SchemaRegistryUsage/Program.cs) | Schema registration and validation |
 | [CircuitBreakerUsage](examples/CircuitBreakerUsage/Program.cs) | Resilient production with circuit breaker |
 | [SecurityUsage](examples/SecurityUsage/Program.cs) | TLS and SASL authentication |
 
-Run any example:
+Every example is a project in the solution, so `dotnet build` compiles them and API drift
+breaks the build. Run any example:
 
 ```bash
 dotnet run --project examples/QueryUsage
@@ -455,7 +493,9 @@ dotnet run --project examples/QueryUsage
 
 ## Moonshot Features
 
-> ⚠️ **Experimental** — These features require Streamline server 0.3.0+ with moonshot feature flags enabled.
+> ⚠️ **Experimental** — These features require a Streamline server build that
+> exposes the Moonshot APIs with the corresponding feature flags enabled. Qualify
+> the exact server image with the conformance suite before production use.
 
 ### Semantic Search
 
@@ -520,11 +560,6 @@ To report a security vulnerability, please email **security@streamline.dev**.
 Do **not** open a public issue.
 
 See the [Security Policy](https://github.com/streamlinelabs/streamline/blob/main/SECURITY.md) for details.
-
-
-
-
-
 
 
 

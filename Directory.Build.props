@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <StreamlinePackageVersion>0.4.0</StreamlinePackageVersion>
+    <Version>$(StreamlinePackageVersion)</Version>
+  </PropertyGroup>
+
+  <Target
+    Name="ValidateStreamlinePackageVersion"
+    BeforeTargets="Pack"
+    Condition="'$(IsPackable)' != 'false'">
+    <Error
+      Condition="'$(PackageVersion)' != '$(StreamlinePackageVersion)'"
+      Text="Packable project $(MSBuildProjectName) has package version $(PackageVersion); expected $(StreamlinePackageVersion)." />
+  </Target>
+</Project>

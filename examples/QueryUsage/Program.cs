@@ -8,7 +8,7 @@
 //   - dotnet add package Streamline.Client
 //
 // Run:
-//   dotnet run
+//   dotnet run --project examples/QueryUsage
 
 using Streamline.Client;
 using Streamline.Client.Query;

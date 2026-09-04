@@ -182,7 +182,7 @@ public sealed class BranchAdminClient : MoonshotClientBase
     {
         RequireNonEmpty(nameof(id), id);
         var node = await RequestAsync(
-            HttpMethod.Get, $"/api/v1/branches/{Uri.EscapeDataString(id)}", null, ct)
+            HttpMethod.Get, $"/api/v1/branches/{UrlPathSegment.Escape(id, nameof(id))}", null, ct)
             .ConfigureAwait(false);
         return ParseView(node) ?? throw new MoonshotHttpException(200, "empty body");
     }
@@ -192,7 +192,7 @@ public sealed class BranchAdminClient : MoonshotClientBase
     {
         RequireNonEmpty(nameof(id), id);
         await RequestAsync(
-            HttpMethod.Delete, $"/api/v1/branches/{Uri.EscapeDataString(id)}", null, ct)
+            HttpMethod.Delete, $"/api/v1/branches/{UrlPathSegment.Escape(id, nameof(id))}", null, ct)
             .ConfigureAwait(false);
     }
 
@@ -204,7 +204,10 @@ public sealed class BranchAdminClient : MoonshotClientBase
         var body = new Dictionary<string, object?> { ["value"] = value };
         if (key is not null) body["key"] = key;
         var node = await RequestAsync(
-            HttpMethod.Post, $"/api/v1/branches/{Uri.EscapeDataString(id)}/messages", body, ct)
+            HttpMethod.Post,
+            $"/api/v1/branches/{UrlPathSegment.Escape(id, nameof(id))}/messages",
+            body,
+            ct)
             .ConfigureAwait(false);
         if (node is null) throw new MoonshotHttpException(200, "empty body");
         return JsonSerializer.Deserialize<BranchMessage>(node.ToJsonString())!;
@@ -215,7 +218,7 @@ public sealed class BranchAdminClient : MoonshotClientBase
         string id, int? limit = null, CancellationToken ct = default)
     {
         RequireNonEmpty(nameof(id), id);
-        var path = $"/api/v1/branches/{Uri.EscapeDataString(id)}/messages"
+        var path = $"/api/v1/branches/{UrlPathSegment.Escape(id, nameof(id))}/messages"
             + (limit.HasValue ? $"?limit={limit.Value}" : "");
         var node = await RequestAsync(HttpMethod.Get, path, null, ct).ConfigureAwait(false);
         return ParseMessages(node);
@@ -501,7 +504,10 @@ public sealed class SemanticSearchClient : MoonshotClientBase
         var body = new Dictionary<string, object?> { ["query"] = query, ["k"] = opts.K };
         if (opts.Filter is not null) body["filter"] = opts.Filter;
         var node = await RequestAsync(
-            HttpMethod.Post, $"/api/v1/topics/{Uri.EscapeDataString(topic)}/search", body, ct)
+            HttpMethod.Post,
+            $"/api/v1/topics/{UrlPathSegment.Escape(topic, nameof(topic))}/search",
+            body,
+            ct)
             .ConfigureAwait(false)
             ?? throw new MoonshotHttpException(200, "empty body");
         return JsonSerializer.Deserialize<SearchResult>(node.ToJsonString())!;

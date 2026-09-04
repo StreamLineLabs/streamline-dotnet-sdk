@@ -1,16 +1,30 @@
-# Docker Compose for integration testing
-# Usage: docker compose -f docker-compose.test.yml up -d
-version: "3.8"
+# Docker Compose for integration testing.
+#
+# The image is configurable so the stack can be pinned to whatever Streamline build
+# is actually available to you — there is no hard-coded tag to go stale:
+#
+#   STREAMLINE_IMAGE=ghcr.io/streamlinelabs/streamline:TESTED_TAG \
+#     docker compose -f docker-compose.test.yml up -d --wait
+#
+# Ports are configurable too, so the stack can run alongside a local server:
+#
+#   STREAMLINE_KAFKA_PORT=19092 STREAMLINE_HTTP_PORT=19094 \
+#     docker compose -f docker-compose.test.yml up -d --wait
+#
+# Then run the opt-in tests:
+#
+#   STREAMLINE_INTEGRATION=1 dotnet test --filter "Category=Integration"
 services:
   streamline:
-    image: ghcr.io/streamlinelabs/streamline:0.3.0
+    image: ${STREAMLINE_IMAGE:-ghcr.io/streamlinelabs/streamline:latest}
     ports:
-      - "9092:9092"
-      - "9094:9094"
+      - "${STREAMLINE_KAFKA_PORT:-9092}:9092"
+      - "${STREAMLINE_HTTP_PORT:-9094}:9094"
     environment:
-      - STREAMLINE_LOG_LEVEL=info
+      - STREAMLINE_LOG_LEVEL=${STREAMLINE_LOG_LEVEL:-info}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9094/health"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s

@@ -1,4 +1,5 @@
 using Streamline.Client;
+using Streamline.TestSupport;
 using Xunit;
 
 namespace Streamline.Client.Tests;
@@ -7,7 +8,7 @@ public class ConnectionManagerTests
 {
     private static StreamlineOptions DefaultOptions => new()
     {
-        BootstrapServers = "localhost:9092",
+        BootstrapServers = StreamlineTestEnvironment.UnitBootstrapServers,
         ConnectionPoolSize = 2,
         ConnectTimeout = TimeSpan.FromMilliseconds(100),
         RequestTimeout = TimeSpan.FromMilliseconds(100),
@@ -20,7 +21,7 @@ public class ConnectionManagerTests
             new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -47,7 +48,7 @@ public class ConnectionManagerTests
             new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -62,7 +63,7 @@ public class ConnectionManagerTests
             new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -84,7 +85,7 @@ public class ConnectionManagerTests
             new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -103,7 +104,7 @@ public class ConnectionManagerTests
             new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -122,7 +123,7 @@ public class ConnectionManagerTests
             throw new HttpRequestException("connection refused"));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -141,7 +142,7 @@ public class ConnectionManagerTests
             new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -163,7 +164,7 @@ public class ConnectionManagerTests
         });
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 
@@ -183,7 +184,7 @@ public class ConnectionManagerTests
             new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("http://localhost:9094"),
+            BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
         };
         var manager = new ConnectionManager(DefaultOptions, httpClient);
 

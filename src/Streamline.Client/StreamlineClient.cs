@@ -128,6 +128,26 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
     public IProducer<TKey, TValue> CreateProducer<TKey, TValue>(ProducerOptions options)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
+        return new Producer<TKey, TValue>(_options, options, _logger);
+    }
+
+    /// <summary>
+    /// Creates a producer that supports client-buffered transactions.
+    /// </summary>
+    public ITransactionalProducer<TKey, TValue> CreateTransactionalProducer<TKey, TValue>()
+    {
+        return CreateTransactionalProducer<TKey, TValue>(new ProducerOptions());
+    }
+
+    /// <summary>
+    /// Creates a producer with custom configuration that supports client-buffered transactions.
+    /// </summary>
+    public ITransactionalProducer<TKey, TValue> CreateTransactionalProducer<TKey, TValue>(
+        ProducerOptions options)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
         return new Producer<TKey, TValue>(_options, options, _logger);
     }
 
@@ -161,20 +181,36 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
 
     /// <summary>
     /// Creates an admin client for topic, consumer group, and server management.
-    /// Uses the HTTP base URL from <see cref="StreamlineOptions.Admin"/>.
+    /// Uses the HTTP base URL and timeout from <see cref="StreamlineOptions.Admin"/>.
     /// </summary>
     public IAdminClient CreateAdmin()
     {
-        return new AdminClient(_options.Admin.HttpBaseUrl, _options.Admin.AuthToken);
+        return new AdminClient(_options.Admin.HttpBaseUrl, _options.Admin.AuthToken, _options.Admin.Timeout);
     }
 
     /// <summary>
     /// Creates an admin client with an explicit HTTP base URL.
     /// </summary>
+    /// <remarks>
+    /// The configured <see cref="AdminOptions.AuthToken"/> is deliberately <em>not</em>
+    /// forwarded: that credential is scoped to <see cref="AdminOptions.HttpBaseUrl"/>,
+    /// and sending it to a different host would leak it. Use
+    /// <see cref="CreateAdmin(string, string?)"/> to supply a token explicitly.
+    /// </remarks>
     /// <param name="httpBaseUrl">Base URL of the HTTP API.</param>
     public IAdminClient CreateAdmin(string httpBaseUrl)
     {
-        return new AdminClient(httpBaseUrl);
+        return CreateAdmin(httpBaseUrl, authToken: null);
+    }
+
+    /// <summary>
+    /// Creates an admin client with an explicit HTTP base URL and bearer token.
+    /// </summary>
+    /// <param name="httpBaseUrl">Base URL of the HTTP API.</param>
+    /// <param name="authToken">Bearer token to send to that host, or null for none.</param>
+    public IAdminClient CreateAdmin(string httpBaseUrl, string? authToken)
+    {
+        return new AdminClient(httpBaseUrl, authToken, _options.Admin.Timeout);
     }
 
     /// <inheritdoc />
@@ -187,11 +223,5 @@ public class StreamlineClient : IStreamlineClient, IAsyncDisposable
             _logger.LogInformation("Streamline client disposed");
         }
         GC.SuppressFinalize(this);
-    }
-
-    // Internal helper to guard against use-after-dispose
-    private void EnsureNotDisposed()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 }

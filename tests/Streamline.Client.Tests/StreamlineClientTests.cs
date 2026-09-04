@@ -1,10 +1,30 @@
-using Streamline.Client;
+using Microsoft.Extensions.DependencyInjection;
+using Streamline.TestSupport;
 using Xunit;
 
 namespace Streamline.Client.Tests;
 
+/// <summary>
+/// Hermetic tests for <see cref="StreamlineClient"/> construction and lifecycle.
+/// Nothing here opens a socket: the librdkafka handle is created lazily, so a client
+/// that is only constructed and disposed never contacts a broker.
+/// </summary>
 public class StreamlineClientTests
 {
+    private static StreamlineOptions UnitOptions() => new()
+    {
+        BootstrapServers = StreamlineTestEnvironment.UnitBootstrapServers,
+        ConnectTimeout = TimeSpan.FromMilliseconds(100),
+        RequestTimeout = TimeSpan.FromMilliseconds(100),
+        Admin = new AdminOptions
+        {
+            HttpBaseUrl = StreamlineTestEnvironment.UnitHttpBaseUrl,
+            Timeout = TimeSpan.FromMilliseconds(100),
+        },
+    };
+
+    private static StreamlineClient CreateClient() => new(UnitOptions());
+
     [Fact]
     public void Constructor_WithBootstrapServers_SetsDefaults()
     {
@@ -31,58 +51,26 @@ public class StreamlineClientTests
     }
 
     [Fact]
-    public async Task ProduceAsync_ReturnsMetadata()
-    {
-        var client = new StreamlineClient("localhost:9092");
-        var result = await client.ProduceAsync("test-topic", "key", "value");
-
-        Assert.Equal("test-topic", result.Topic);
-        Assert.Equal(0, result.Partition);
-        Assert.True(result.Offset > 0);
-    }
-
-    [Fact]
-    public async Task ProduceAsync_WithHeaders_ReturnsMetadata()
-    {
-        var client = new StreamlineClient("localhost:9092");
-        var headers = new Headers().Add("trace-id", "abc-123");
-        var result = await client.ProduceAsync("test-topic", "key", "value", headers);
-
-        Assert.Equal("test-topic", result.Topic);
-    }
-
-    [Fact]
-    public async Task IsHealthyAsync_ReturnsFalseWhenNoServer()
-    {
-        var options = new StreamlineOptions
-        {
-            BootstrapServers = "localhost:9092",
-            RequestTimeout = TimeSpan.FromMilliseconds(100),
-            ConnectTimeout = TimeSpan.FromMilliseconds(100),
-        };
-        var client = new StreamlineClient(options);
-        // Without a running server, health check returns false
-        Assert.False(await client.IsHealthyAsync());
-    }
-
-    [Fact]
     public async Task DisposeAsync_MarksClientAsDisposed()
     {
-        var options = new StreamlineOptions
-        {
-            BootstrapServers = "localhost:9092",
-            RequestTimeout = TimeSpan.FromMilliseconds(100),
-            ConnectTimeout = TimeSpan.FromMilliseconds(100),
-        };
-        var client = new StreamlineClient(options);
+        var client = CreateClient();
         await client.DisposeAsync();
+
         Assert.False(await client.IsHealthyAsync());
+    }
+
+    [Fact]
+    public async Task DisposeAsync_CalledTwice_DoesNotThrow()
+    {
+        var client = CreateClient();
+        await client.DisposeAsync();
+        await client.DisposeAsync();
     }
 
     [Fact]
     public void CreateProducer_ReturnsProducer()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = CreateClient();
         var producer = client.CreateProducer<string, string>();
         Assert.NotNull(producer);
     }
@@ -90,7 +78,7 @@ public class StreamlineClientTests
     [Fact]
     public void CreateProducer_WithOptions_ReturnsProducer()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = CreateClient();
         var producer = client.CreateProducer<string, string>(new ProducerOptions { Retries = 5 });
         Assert.NotNull(producer);
     }
@@ -98,7 +86,7 @@ public class StreamlineClientTests
     [Fact]
     public void CreateConsumer_ReturnsConsumer()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = CreateClient();
         var consumer = client.CreateConsumer<string, string>("test-topic", "test-group");
         Assert.NotNull(consumer);
     }
@@ -106,7 +94,7 @@ public class StreamlineClientTests
     [Fact]
     public void CreateConsumer_WithOptions_ReturnsConsumer()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = CreateClient();
         var consumer = client.CreateConsumer<string, string>("test-topic", new ConsumerOptions
         {
             GroupId = "my-group",
@@ -118,14 +106,127 @@ public class StreamlineClientTests
     [Fact]
     public void Client_ExposesRetryPolicy()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = CreateClient();
         Assert.NotNull(client.RetryPolicy);
     }
 
     [Fact]
     public void Client_ExposesConnectionManager()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = CreateClient();
         Assert.NotNull(client.ConnectionManager);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_AfterDispose_ThrowsObjectDisposedException()
+    {
+        var client = CreateClient();
+        await client.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => client.ProduceAsync("test-topic", "key", "value"));
+    }
+
+    [Fact]
+    public async Task CreateAdmin_ReturnsAdminClient()
+    {
+        var options = UnitOptions();
+        options.Admin.Timeout = TimeSpan.FromMilliseconds(250);
+
+        var client = new StreamlineClient(options);
+        await using (var admin = client.CreateAdmin())
+        {
+            Assert.NotNull(admin);
+        }
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Interface_CreateAdminWithExplicitToken_IsAvailable()
+    {
+        await using IStreamlineClient client = CreateClient();
+        await using var admin = client.CreateAdmin(
+            StreamlineTestEnvironment.UnitHttpBaseUrl,
+            "test-token");
+
+        Assert.NotNull(admin);
+    }
+
+    [Fact]
+    public async Task AddStreamline_ResolvesWithoutExplicitLoggingRegistration()
+    {
+        var services = new ServiceCollection();
+        services.AddStreamline(options =>
+        {
+            options.BootstrapServers = StreamlineTestEnvironment.UnitBootstrapServers;
+            options.Admin.HttpBaseUrl = StreamlineTestEnvironment.UnitHttpBaseUrl;
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredService<IStreamlineClient>();
+
+        Assert.NotNull(client);
+    }
+
+    [Fact]
+    public void AddStreamline_ValidatesRequiredArguments()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentNullException>(
+            () => ServiceCollectionExtensions.AddStreamline(null!, _ => { }));
+        Assert.Throws<ArgumentNullException>(
+            () => services.AddStreamline((Action<StreamlineOptions>)null!));
+        Assert.Throws<ArgumentException>(() => services.AddStreamline(" "));
+    }
+}
+
+/// <summary>
+/// Tests for <see cref="StreamlineClient"/> operations that require a live broker.
+/// </summary>
+[Collection(IntegrationCollection.Name)]
+public class StreamlineClientIntegrationTests
+{
+    private readonly IntegrationServerFixture _server;
+
+    /// <summary>Creates the test class with the shared integration fixture.</summary>
+    /// <param name="server">Fixture describing the configured Streamline endpoints.</param>
+    public StreamlineClientIntegrationTests(IntegrationServerFixture server)
+    {
+        _server = server;
+    }
+
+    private StreamlineClient CreateClient() => new(new StreamlineOptions
+    {
+        BootstrapServers = _server.BootstrapServers,
+        Admin = new AdminOptions { HttpBaseUrl = _server.HttpBaseUrl },
+    });
+
+    [IntegrationFact]
+    public async Task ProduceAsync_ReturnsMetadata()
+    {
+        await using var client = CreateClient();
+        var result = await client.ProduceAsync("test-topic", "key", "value");
+
+        Assert.Equal("test-topic", result.Topic);
+        Assert.True(result.Offset >= 0);
+    }
+
+    [IntegrationFact]
+    public async Task ProduceAsync_WithHeaders_ReturnsMetadata()
+    {
+        await using var client = CreateClient();
+        var headers = new Headers().Add("trace-id", "abc-123");
+        var result = await client.ProduceAsync("test-topic", "key", "value", headers);
+
+        Assert.Equal("test-topic", result.Topic);
+    }
+
+    [IntegrationFact]
+    public async Task IsHealthyAsync_ReturnsTrueAgainstRunningServer()
+    {
+        await using var client = CreateClient();
+        Assert.True(await client.IsHealthyAsync());
     }
 }

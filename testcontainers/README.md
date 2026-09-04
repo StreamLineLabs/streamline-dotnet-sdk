@@ -135,7 +135,7 @@ await using var container = new StreamlineBuilder()
 
 // Specific version
 await using var container = new StreamlineBuilder()
-    .WithTag("0.2.0")
+    .WithTag("your-tested-tag")
     .Build();
 
 // In-memory mode (no persistence)
@@ -252,7 +252,7 @@ await client.ProduceAsync("my-topic", "key", "Hello from testcontainers!");
 
 ## Requirements
 
-- .NET 8.0 or later
+- A .NET SDK/runtime capable of consuming the `net8.0` package
 - Docker runtime (Docker Desktop, Colima, Podman, etc.)
 
 ## License

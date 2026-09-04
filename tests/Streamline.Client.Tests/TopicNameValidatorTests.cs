@@ -1,10 +1,23 @@
-using Streamline.Client;
+using Streamline.TestSupport;
 using Xunit;
 
 namespace Streamline.Client.Tests;
 
 public class TopicNameValidatorTests
 {
+    private static StreamlineOptions UnitOptions() => new()
+    {
+        BootstrapServers = StreamlineTestEnvironment.UnitBootstrapServers,
+        ConnectTimeout = TimeSpan.FromMilliseconds(100),
+        RequestTimeout = TimeSpan.FromMilliseconds(100),
+    };
+
+    private static HttpClient UnreachableHttpClient() => new()
+    {
+        BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl),
+        Timeout = TimeSpan.FromMilliseconds(100),
+    };
+
     // --- Valid names ---
 
     [Theory]
@@ -104,12 +117,12 @@ public class TopicNameValidatorTests
         Assert.Equal("topicName", ex.ParamName);
     }
 
-    // --- Integration: Producer rejects invalid topic ---
+    // --- Validation runs before any network access: Producer rejects invalid topic ---
 
     [Fact]
     public async Task Producer_SendAsync_InvalidTopic_ThrowsArgumentException()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         await using var producer = client.CreateProducer<string, string>();
 
         await Assert.ThrowsAsync<ArgumentException>(
@@ -119,7 +132,7 @@ public class TopicNameValidatorTests
     [Fact]
     public async Task Producer_SendAsync_ReservedDotTopic_ThrowsArgumentException()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         await using var producer = client.CreateProducer<string, string>();
 
         await Assert.ThrowsAsync<ArgumentException>(
@@ -129,19 +142,19 @@ public class TopicNameValidatorTests
     [Fact]
     public async Task Producer_SendBatchAsync_InvalidTopic_ThrowsArgumentException()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
         await using var producer = client.CreateProducer<string, string>();
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => producer.SendBatchAsync("topic/invalid", new[] { ((string?)"key", "value") }));
     }
 
-    // --- Integration: Consumer rejects invalid topic ---
+    // --- Validation runs before any network access: Consumer rejects invalid topic ---
 
     [Fact]
     public void Consumer_Create_InvalidTopic_ThrowsArgumentException()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
 
         Assert.Throws<ArgumentException>(
             () => client.CreateConsumer<string, string>("", "group-id"));
@@ -150,18 +163,18 @@ public class TopicNameValidatorTests
     [Fact]
     public void Consumer_Create_DotDotTopic_ThrowsArgumentException()
     {
-        var client = new StreamlineClient("localhost:9092");
+        var client = new StreamlineClient(UnitOptions());
 
         Assert.Throws<ArgumentException>(
             () => client.CreateConsumer<string, string>("..", "group-id"));
     }
 
-    // --- Integration: AdminClient rejects invalid topic ---
+    // --- Validation runs before any network access: AdminClient rejects invalid topic ---
 
     [Fact]
     public async Task AdminClient_CreateTopicAsync_InvalidTopic_ThrowsArgumentException()
     {
-        await using var admin = new AdminClient(new HttpClient { BaseAddress = new Uri("http://localhost:9094") });
+        await using var admin = new AdminClient(UnreachableHttpClient());
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => admin.CreateTopicAsync("topic with spaces"));
@@ -170,7 +183,7 @@ public class TopicNameValidatorTests
     [Fact]
     public async Task AdminClient_DescribeTopicAsync_InvalidTopic_ThrowsArgumentException()
     {
-        await using var admin = new AdminClient(new HttpClient { BaseAddress = new Uri("http://localhost:9094") });
+        await using var admin = new AdminClient(UnreachableHttpClient());
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => admin.DescribeTopicAsync(""));
@@ -179,7 +192,7 @@ public class TopicNameValidatorTests
     [Fact]
     public async Task AdminClient_DeleteTopicAsync_InvalidTopic_ThrowsArgumentException()
     {
-        await using var admin = new AdminClient(new HttpClient { BaseAddress = new Uri("http://localhost:9094") });
+        await using var admin = new AdminClient(UnreachableHttpClient());
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => admin.DeleteTopicAsync("."));

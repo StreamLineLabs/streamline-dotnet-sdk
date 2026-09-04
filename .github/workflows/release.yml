@@ -1,27 +1,183 @@
 name: Release
+
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      conformance_image_digest:
+        description: >-
+          Immutable Streamline image reference pinned by content digest
+          (registry/repository@sha256:<64 lowercase hex characters>) to run live
+          conformance against before publishing. Overrides
+          release/CONFORMANCE_IMAGE_DIGEST for this run only. A floating tag
+          (including ":latest") or no value in either place hard-blocks publication;
+          there is no default image.
+        required: false
+        type: string
+
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+
 jobs:
-  publish:
+  # Release blocker: tag publication may not proceed unless live conformance passed
+  # against an explicit, immutable Streamline image digest. There is no default image
+  # and no ":latest" fallback — see scripts/resolve-conformance-image.sh. A missing or
+  # invalid digest, or a conformance run that executed zero tests (for example because
+  # the filter matched nothing or every matched test was skipped), hard-blocks the
+  # `publish` job below via `needs: conformance`.
+  conformance:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - run: dotnet restore
-      - run: dotnet build --configuration Release --no-restore
-      - run: dotnet pack --configuration Release --no-build --output ./nupkg
-      - run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
-      - name: Generate SBOM
+
+      - name: Resolve and validate the conformance image digest
+        id: resolve-image
+        shell: bash
+        env:
+          EXPLICIT_IMAGE: ${{ github.event.inputs.conformance_image_digest }}
         run: |
-          dotnet tool install --global CycloneDX 2>/dev/null || true
-          dotnet CycloneDX Streamline.sln -o . -f sbom.cdx.json -j 2>/dev/null || true
+          set -euo pipefail
+          image="$(scripts/resolve-conformance-image.sh "${EXPLICIT_IMAGE:-}")"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+      - run: dotnet restore
+      - run: dotnet build --no-restore
+
+      - name: Start Streamline server (pinned to the validated digest)
+        env:
+          STREAMLINE_IMAGE: ${{ steps.resolve-image.outputs.image }}
+        run: docker compose -f docker-compose.test.yml up -d --wait
+
+      - name: Wait for health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9094/health > /dev/null 2>&1; then
+              echo "Streamline is healthy"
+              exit 0
+            fi
+            echo "Waiting for Streamline... ($i/30)"
+            sleep 2
+          done
+          echo "Streamline failed to start"
+          docker compose -f docker-compose.test.yml logs
+          exit 1
+
+      - name: Run live conformance tests
+        run: |
+          dotnet test tests/Streamline.Conformance --no-build --filter "Category=Conformance" \
+            --verbosity normal --logger "trx;LogFileName=release-conformance.trx" \
+            --results-directory ./conformance-results
+        env:
+          STREAMLINE_INTEGRATION: "1"
+          STREAMLINE_BOOTSTRAP_SERVERS: localhost:9092
+          STREAMLINE_HTTP_URL: http://localhost:9094
+          STREAMLINE_READY_TIMEOUT_SECONDS: "60"
+
+      - name: Guard against a zero-test/all-skipped conformance run
+        run: scripts/assert-executed-conformance-tests.sh ./conformance-results/release-conformance.trx
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs
+
+      - name: Stop Streamline server
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  publish:
+    needs: conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Validate release tag and package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${RELEASE_TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::Release tags must use the stable SemVer form vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          tag_version="${BASH_REMATCH[1]}"
+          package_version="$(dotnet msbuild src/Streamline.Client/Streamline.Client.csproj -nologo -getProperty:StreamlinePackageVersion)"
+          if [[ "${tag_version}" != "${package_version}" ]]; then
+            echo "::error::Tag version ${tag_version} does not match package version ${package_version}."
+            exit 1
+          fi
+
+      - run: dotnet restore
+      - run: dotnet format --verify-no-changes --no-restore
+      - run: dotnet build --configuration Release --no-restore
+      - run: dotnet test --configuration Release --no-build --verbosity normal
+      - run: dotnet pack --configuration Release --no-build --output ./nupkg
+
+      - name: Verify release package set
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          expected=(
+            "Streamline.Client.${version}.nupkg"
+            "Streamline.TestContainers.${version}.nupkg"
+          )
+          shopt -s nullglob
+          packages=(./nupkg/*.nupkg)
+
+          if [[ "${#packages[@]}" -ne "${#expected[@]}" ]]; then
+            echo "::error::Expected ${#expected[@]} NuGet packages, found ${#packages[@]}."
+            exit 1
+          fi
+
+          for expected_package in "${expected[@]}"; do
+            if [[ ! -f "./nupkg/${expected_package}" ]]; then
+              echo "::error::Missing expected package ./nupkg/${expected_package}."
+              exit 1
+            fi
+          done
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: ./nupkg/sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest package provenance
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ./nupkg/*.nupkg
+
+      - name: Attest package SBOM
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest-sbom@v2
+        with:
+          subject-path: ./nupkg/*.nupkg
+          sbom-path: ./nupkg/sbom.spdx.json
+
+      - name: Publish NuGet packages
+        run: dotnet nuget push ./nupkg/*.nupkg --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
+
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            sbom.cdx.json
+            nupkg/*.nupkg
+            nupkg/sbom.spdx.json

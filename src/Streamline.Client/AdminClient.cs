@@ -256,6 +256,12 @@ public record MetricPoint
 /// </summary>
 public sealed class AdminClient : IAdminClient
 {
+    /// <summary>
+    /// Bound applied to HTTP requests when the caller does not supply one, so a
+    /// missing server surfaces as a timeout rather than a hang.
+    /// </summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -265,13 +271,32 @@ public sealed class AdminClient : IAdminClient
     };
 
     /// <summary>
-    /// Creates an admin client for the specified HTTP API base URL.
+    /// Creates an admin client for the specified HTTP API base URL, using
+    /// <see cref="DefaultTimeout"/> for requests.
     /// </summary>
     /// <param name="httpBaseUrl">Base URL of the Streamline HTTP API (e.g., "http://localhost:9094").</param>
     /// <param name="authToken">Optional bearer token for authentication.</param>
     public AdminClient(string httpBaseUrl, string? authToken = null)
+        : this(httpBaseUrl, authToken, timeout: null)
     {
-        _httpClient = new HttpClient { BaseAddress = new Uri(httpBaseUrl) };
+    }
+
+    /// <summary>
+    /// Creates an admin client for the specified HTTP API base URL with an explicit
+    /// request timeout.
+    /// </summary>
+    /// <param name="httpBaseUrl">Base URL of the Streamline HTTP API (e.g., "http://localhost:9094").</param>
+    /// <param name="authToken">Optional bearer token for authentication.</param>
+    /// <param name="timeout">
+    /// Bound applied to every HTTP request. Defaults to <see cref="DefaultTimeout"/> when null.
+    /// </param>
+    public AdminClient(string httpBaseUrl, string? authToken, TimeSpan? timeout)
+    {
+        _httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(httpBaseUrl),
+            Timeout = timeout ?? DefaultTimeout,
+        };
         if (authToken is not null)
         {
             _httpClient.DefaultRequestHeaders.Authorization =
@@ -300,7 +325,10 @@ public sealed class AdminClient : IAdminClient
     public async Task<TopicMetadata> DescribeTopicAsync(string topic, CancellationToken cancellationToken = default)
     {
         TopicNameValidator.Validate(topic);
-        var response = await SendAsync(HttpMethod.Get, $"/v1/topics/{Uri.EscapeDataString(topic)}", cancellationToken);
+        var response = await SendAsync(
+            HttpMethod.Get,
+            $"/v1/topics/{UrlPathSegment.Escape(topic, nameof(topic))}",
+            cancellationToken);
         return await DeserializeAsync<TopicMetadata>(response, cancellationToken)
             ?? throw new StreamlineTopicNotFoundException(topic);
     }
@@ -317,7 +345,10 @@ public sealed class AdminClient : IAdminClient
     public async Task DeleteTopicAsync(string topic, CancellationToken cancellationToken = default)
     {
         TopicNameValidator.Validate(topic);
-        await SendAsync(HttpMethod.Delete, $"/v1/topics/{Uri.EscapeDataString(topic)}", cancellationToken);
+        await SendAsync(
+            HttpMethod.Delete,
+            $"/v1/topics/{UrlPathSegment.Escape(topic, nameof(topic))}",
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -330,7 +361,8 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task<ConsumerGroupMetadata> DescribeConsumerGroupAsync(string groupId, CancellationToken cancellationToken = default)
     {
-        var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{Uri.EscapeDataString(groupId)}", cancellationToken);
+        var escapedGroupId = UrlPathSegment.Escape(groupId, nameof(groupId));
+        var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{escapedGroupId}", cancellationToken);
         return await DeserializeAsync<ConsumerGroupMetadata>(response, cancellationToken)
             ?? throw new StreamlineException("Consumer group not found", StreamlineErrorCode.Unknown, hint: "Check that the consumer group ID is correct");
     }
@@ -338,7 +370,8 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task DeleteConsumerGroupAsync(string groupId, CancellationToken cancellationToken = default)
     {
-        await SendAsync(HttpMethod.Delete, $"/v1/consumer-groups/{Uri.EscapeDataString(groupId)}", cancellationToken);
+        var escapedGroupId = UrlPathSegment.Escape(groupId, nameof(groupId));
+        await SendAsync(HttpMethod.Delete, $"/v1/consumer-groups/{escapedGroupId}", cancellationToken);
     }
 
     /// <inheritdoc />
@@ -381,7 +414,8 @@ public sealed class AdminClient : IAdminClient
     /// <inheritdoc />
     public async Task<ConsumerGroupLag> GetConsumerGroupLagAsync(string groupId, CancellationToken cancellationToken = default)
     {
-        var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{groupId}/lag", cancellationToken);
+        var escapedGroupId = UrlPathSegment.Escape(groupId, nameof(groupId));
+        var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{escapedGroupId}/lag", cancellationToken);
         return await response.Content.ReadFromJsonAsync<ConsumerGroupLag>(_jsonOptions, cancellationToken)
             ?? new ConsumerGroupLag { GroupId = groupId };
     }
@@ -390,7 +424,12 @@ public sealed class AdminClient : IAdminClient
     public async Task<ConsumerGroupLag> GetConsumerGroupTopicLagAsync(string groupId, string topic, CancellationToken cancellationToken = default)
     {
         TopicNameValidator.Validate(topic);
-        var response = await SendAsync(HttpMethod.Get, $"/v1/consumer-groups/{groupId}/lag/{topic}", cancellationToken);
+        var escapedGroupId = UrlPathSegment.Escape(groupId, nameof(groupId));
+        var escapedTopic = UrlPathSegment.Escape(topic, nameof(topic));
+        var response = await SendAsync(
+            HttpMethod.Get,
+            $"/v1/consumer-groups/{escapedGroupId}/lag/{escapedTopic}",
+            cancellationToken);
         return await response.Content.ReadFromJsonAsync<ConsumerGroupLag>(_jsonOptions, cancellationToken)
             ?? new ConsumerGroupLag { GroupId = groupId };
     }
@@ -399,7 +438,8 @@ public sealed class AdminClient : IAdminClient
     public async Task<IReadOnlyList<InspectedMessage>> InspectMessagesAsync(string topic, int partition = 0, long? offset = null, int limit = 20, CancellationToken cancellationToken = default)
     {
         TopicNameValidator.Validate(topic);
-        var path = $"/v1/inspect/{topic}?partition={partition}&limit={limit}";
+        var escapedTopic = UrlPathSegment.Escape(topic, nameof(topic));
+        var path = $"/v1/inspect/{escapedTopic}?partition={partition}&limit={limit}";
         if (offset.HasValue) path += $"&offset={offset.Value}";
         var response = await SendAsync(HttpMethod.Get, path, cancellationToken);
         return await response.Content.ReadFromJsonAsync<List<InspectedMessage>>(_jsonOptions, cancellationToken)
@@ -410,7 +450,11 @@ public sealed class AdminClient : IAdminClient
     public async Task<IReadOnlyList<InspectedMessage>> LatestMessagesAsync(string topic, int count = 10, CancellationToken cancellationToken = default)
     {
         TopicNameValidator.Validate(topic);
-        var response = await SendAsync(HttpMethod.Get, $"/v1/inspect/{topic}/latest?count={count}", cancellationToken);
+        var escapedTopic = UrlPathSegment.Escape(topic, nameof(topic));
+        var response = await SendAsync(
+            HttpMethod.Get,
+            $"/v1/inspect/{escapedTopic}/latest?count={count}",
+            cancellationToken);
         return await response.Content.ReadFromJsonAsync<List<InspectedMessage>>(_jsonOptions, cancellationToken)
             ?? [];
     }

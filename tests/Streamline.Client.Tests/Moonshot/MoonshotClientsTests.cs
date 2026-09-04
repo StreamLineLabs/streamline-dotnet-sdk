@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Streamline.Client.Moonshot;
+using Streamline.TestSupport;
 using Xunit;
 
 namespace Streamline.Client.Tests.Moonshot;
@@ -16,7 +17,7 @@ public class MoonshotClientsTests
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         }, rec);
-        return new HttpClient(handler) { BaseAddress = new Uri("http://localhost:9094") };
+        return new HttpClient(handler) { BaseAddress = new Uri(StreamlineTestEnvironment.UnitHttpBaseUrl) };
     }
 
     private sealed class RequestRecorder
