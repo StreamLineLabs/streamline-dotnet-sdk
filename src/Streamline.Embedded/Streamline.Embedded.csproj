@@ -4,7 +4,6 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <PackageId>Streamline.Embedded</PackageId>
-    <Version>0.3.0</Version>
     <Description>Embedded Streamline streaming server for .NET</Description>
   </PropertyGroup>
   <ItemGroup>

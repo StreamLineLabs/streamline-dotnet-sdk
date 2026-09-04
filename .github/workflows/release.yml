@@ -111,6 +111,13 @@ jobs:
             exit 1
           fi
 
+          tag_version="${BASH_REMATCH[1]}"
+          package_version="$(dotnet msbuild src/Streamline.Client/Streamline.Client.csproj -nologo -getProperty:StreamlinePackageVersion)"
+          if [[ "${tag_version}" != "${package_version}" ]]; then
+            echo "::error::Tag version ${tag_version} does not match package version ${package_version}."
+            exit 1
+          fi
+
       - run: dotnet restore
       - run: dotnet format --verify-no-changes --no-restore
       - run: dotnet build --configuration Release --no-restore

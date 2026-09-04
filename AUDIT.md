@@ -8,6 +8,7 @@ Status as of 2026-09-02:
 |---|---|---|
 | Public transaction API | Complete | Added an explicit `ITransactionalProducer<TKey,TValue>` capability and `IStreamlineClient.CreateTransactionalProducer` overloads. README examples now compile and describe the non-atomic client-buffered semantics accurately. |
 | Client interface and DI | Complete | Exposed the credential-aware admin overload through `IStreamlineClient`, made `AddStreamline` resolvable without a separate logging registration, validated required arguments, and added compile-level usage tests. |
+| Package versions | Complete | Centralized the coordinated `0.4.0` version in `Directory.Build.props` and added a pack-time mismatch failure. |
 | Authentication conformance | Complete | Replaced construction-only placeholders with real secured-broker produce/deny tests. Missing opt-in skips explicitly; enabled but incomplete fixtures fail closed. |
 | Release validation | Complete | Release tags must be stable `vMAJOR.MINOR.PATCH` values matching the central package version. Format, build, tests, exact package-set checks, and SBOM generation are release gates. Public-repository provenance and SBOM attestations fail closed. |
 | `Streamline.Embedded` packaging | Complete | Marked non-packable because the project does not ship the required native runtime assets. |
@@ -19,7 +20,9 @@ Live broker and authentication execution remain environment-dependent. The herme
 suite verifies fixture selection and fail-closed configuration; real auth tests require
 explicit `STREAMLINE_AUTH_*` values and a secured broker. Release attestations can only
 be exercised by GitHub Actions in a repository context that supports artifact
-attestations. No tag or publication is performed here.
+attestations. The repository already contains a `v0.3.0` tag, so these uncommitted
+changes now target `0.4.0` and must only be published from a new matching `v0.4.0`
+tag after the remaining release gates pass. No tag or publication is performed here.
 The new conformance gate has not been exercised live end-to-end (no real Streamline
 image digest is available in this environment); its validation, hard-block, and
 executed-test-count-guard logic were verified directly (see the scripts' `bats` suite
